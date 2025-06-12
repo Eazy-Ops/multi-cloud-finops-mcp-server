@@ -15,8 +15,9 @@ def get_azure_cost(
     client_id: Optional[str] = None,
     client_secret: Optional[str] = None
 ) -> Dict[str, Any]:
+
     """
-    Get Azure cost breakdown using the Consumption API.
+    Get Azure cost breakdown for the current month for a given project.
     """
     credentials = get_azure_credentials(tenant_id, client_id, client_secret)
     cost_data, error = get_budget_data(credentials, subscription_id)
@@ -34,13 +35,18 @@ def run_azure_finops_audit(
     client_id: Optional[str] = None,
     client_secret: Optional[str] = None
 ) -> Dict[str, Any]:
+
     """
-    Run a FinOps audit on Azure resources.
+    Run Azure FinOps audit to find unused resources and report budget.
+    Checks:
+        - Terminated (idle) Compute Engine VMs
+        - Unattached Persistent Disks
+        - Budget usage
     """
     credentials = get_azure_credentials(tenant_id, client_id, client_secret)
 
-    stopped_vms, vm_errors = get_stopped_vms(credentials, subscription_id, regions)
-    unattached_disks, disk_errors = get_unattached_disks(credentials, subscription_id, regions)
+    stopped_vms, vm_errors = get_stopped_vms(credentials, subscription_id)
+    unattached_disks, disk_errors = get_unattached_disks(credentials, subscription_id)
     budget_data, budget_error = get_budget_data(credentials, subscription_id)
 
     return {
