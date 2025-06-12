@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "multi-cloud-mcp"
+version = "0.1.0"
+description = "Multi-cloud FinOps MCP server for AWS, GCP, and Azure cost summaries."
+authors = ["shujat <muhammad.hussain@zazmic.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "^0.115.12"
+uvicorn = "^0.34.3"
+boto3 = "^1.38.34"
+google-cloud-billing = "^1.16.2"
+azure-identity = "^1.23.0"
+azure-mgmt-costmanagement = "^4.0.1"
+mcp = "^1.9.3"
+typer = "^0.16.0"
+langchain = "^0.3.25"
+langgraph = "^0.4.8"
+langchain-google-genai = "^2.1.5"
+nest-asyncio = "^1.6.0"
+google-api-python-client = "^2.172.0"
+azure-mgmt-subscription = "^3.1.1"
+azure-mgmt-resource = "^23.4.0"
+azure-mgmt-compute = "^34.1.0"
+azure-mgmt-consumption = "^10.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
