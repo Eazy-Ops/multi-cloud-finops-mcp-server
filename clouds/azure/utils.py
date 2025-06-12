@@ -82,24 +82,53 @@ def get_budget_data(credential: DefaultAzureCredential, subscription_id: str) ->
 
 def get_cost_breakdown(credential: DefaultAzureCredential, subscription_id: str) -> Tuple[List[Dict[str, Any]], str]:
     try:
+        from azure.mgmt.consumption.models import UsageDetail
+
         consumption_client = ConsumptionManagementClient(credential, subscription_id)
         end_date = datetime.utcnow().date()
         start_date = end_date.replace(day=1)
 
-        usage = consumption_client.usage_details.list(
+        usage_details = consumption_client.usage_details.list(
             scope=f"/subscriptions/{subscription_id}",
             expand="properties/meterDetails",
             filter=f"properties/usageEnd ge '{start_date}' AND properties/usageEnd le '{end_date}'"
         )
 
         cost_by_service = {}
-        for item in usage:
-            service = item.properties.meter_details.meter_name
-            cost = float(item.properties.pretax_cost)
-            cost_by_service[service] = cost_by_service.get(service, 0.0) + cost
+        currency = "USD"
 
-        breakdown = [{"service": k, "cost": round(v, 2), "currency": "USD"} for k, v in cost_by_service.items()]
+        for item in usage_details:
+            try:
+                # Attempt to get service name from known attributes
+                if hasattr(item, "properties") and item.properties:
+                    details = item.properties
+                    service = None
+
+                    if hasattr(details, "meter_details") and details.meter_details:
+                        service = details.meter_details.meter_name
+                    if not service and hasattr(details, "meter_name"):
+                        service = details.meter_name
+                    if not service:
+                        service = "Unknown Service"
+
+                    cost = float(getattr(details, "pretax_cost", 0.0))
+                    currency = getattr(details, "currency", "USD")
+                    cost_by_service[service] = cost_by_service.get(service, 0.0) + cost
+
+            except Exception as ex:
+                print(str(ex), "===============")
+                continue
+
+        if not cost_by_service:
+            return [], "No usage data found for this period."
+
+        breakdown = [
+            {"service": k, "cost": round(v, 2), "currency": currency}
+            for k, v in sorted(cost_by_service.items(), key=lambda i: i[1], reverse=True)
+        ]
+
         return breakdown, ""
 
     except Exception as e:
         return [], str(e)
+

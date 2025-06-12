@@ -1,5 +1,5 @@
 from typing import List, Tuple, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from clouds.gcp.client import get_gcp_credentials
@@ -73,21 +73,90 @@ def get_budget_data(credentials, billing_account_id: str) -> Tuple[List[Dict[str
         return [], str(e)
 
 
-def get_gcp_cost_breakdown(credentials, project_id: str) -> Tuple[List[Dict[str, Any]], str]:
-    try:
-        now = datetime.utcnow()
-        start_date = (now.replace(day=1)).strftime('%Y-%m-%d')
-        end_date = now.strftime('%Y-%m-%d')
 
-        # Placeholder – real cost breakdowns need BigQuery export
-        return [{
-            "service": "Compute Engine",
-            "cost": 100.50,
-            "currency": "USD"
-        }, {
-            "service": "Cloud Storage",
-            "cost": 20.00,
-            "currency": "USD"
-        }], ""
+from datetime import datetime, timedelta
+from typing import Optional, Tuple, Dict, Any
+from google.cloud import bigquery
+from google.api_core.exceptions import NotFound
+
+def get_gcp_cost_breakdown(
+    credentials,
+    project_id: str,
+    time_range_days: Optional[int] = None,
+    start_date_iso: Optional[str] = None,
+    end_date_iso: Optional[str] = None,
+    dataset: str = "dev-ezo.dev_dataset",
+    table_prefix: str = "gcp_billing_export_"  # default table prefix
+) -> Tuple[Dict[str, Any], str]:
+    try:
+        now = datetime.utcnow().date()
+
+        if start_date_iso and end_date_iso:
+            start = datetime.strptime(start_date_iso, "%Y-%m-%d").date()
+            end = datetime.strptime(end_date_iso, "%Y-%m-%d").date()
+        elif time_range_days:
+            end = now
+            start = now - timedelta(days=time_range_days - 1)
+        else:
+            start = now.replace(day=1)
+            end = now
+
+        bq_client = bigquery.Client(credentials=credentials, project=project_id)
+        table_name = f"`{dataset}.gcp_billing_export_*`"
+        print(table_name, "===============" , project_id)
+        query = f"""
+        SELECT
+          service.description AS service,
+          SUM(cost) AS total_cost,
+          currency
+        FROM {table_name}
+        WHERE usage_start_time BETWEEN '{start}' AND '{end}'
+        AND project.id IN ('{project_id}')
+        GROUP BY service, currency
+        ORDER BY total_cost DESC
+        """
+
+        query_job = bq_client.query(query)
+        results = query_job.result()
+
+        cost_by_service = {}
+        total_cost = 0
+        currency = "USD"
+
+        for row in results:
+            cost_by_service[row.service] = float(row.total_cost)
+            total_cost += float(row.total_cost)
+            currency = row.currency
+
+        return {
+            "project_id": project_id,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "total_cost": round(total_cost, 2),
+            "currency": currency,
+            "cost_by_service": cost_by_service,
+        }, ""
+
+    except NotFound:
+        # Fallback to mock
+        mock_services = [
+            {"service": "Compute Engine", "cost": 102.5, "currency": "USD"},
+            {"service": "Cloud Storage", "cost": 21.8, "currency": "USD"},
+        ]
+        total = sum(item["cost"] for item in mock_services)
+        grouped = {s["service"]: s["cost"] for s in mock_services}
+
+        return {
+            "project_id": project_id,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "total_cost": round(total, 2),
+            "currency": "USD",
+            "cost_by_service": grouped,
+            "note": "Returned mock data as no billing export was found."
+        }, ""
+
     except Exception as e:
-        return [], str(e)
+        return {}, str(e)
+
+

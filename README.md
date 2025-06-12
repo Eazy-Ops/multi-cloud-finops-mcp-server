@@ -153,16 +153,3 @@ Then ask questions in Claude Desktop, Amazon Q, or any MCP-compatible client:
 
 ---
 
-## 🔧 Tools Included
-
-### `get_cost`
-
-* ✅ Supported on AWS, GCP, Azure
-* 📅 Accepts time ranges or dates
-* 🧩 Groups by service, tag, or region (where supported)
-
-### `run_finops_audit`
-
-* Finds unused compute (EC2, VM, GCE)
-* Detects unattached disks
-* Checks budget usage (Azure & GCP)

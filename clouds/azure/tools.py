@@ -5,7 +5,7 @@ from clouds.azure.client import get_azure_credentials
 from clouds.azure.utils import (
     get_stopped_vms,
     get_unattached_disks,
-    get_budget_data
+    get_budget_data, get_cost_breakdown
 )
 
 @tool
@@ -20,7 +20,13 @@ def get_azure_cost(
     Get Azure cost breakdown for the current month for a given project.
     """
     credentials = get_azure_credentials(tenant_id, client_id, client_secret)
-    cost_data, error = get_budget_data(credentials, subscription_id)
+    cost_data, error = get_cost_breakdown(credentials, subscription_id)
+    if not cost_data:
+        return {
+            "subscription_id": subscription_id,
+            "cost_summary": [],
+            "error": "No Azure cost data found for the current month."
+        }
     return {
         "subscription_id": subscription_id,
         "cost_summary": cost_data,

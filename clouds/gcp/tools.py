@@ -10,22 +10,30 @@ from clouds.gcp.utils import (
     get_gcp_cost_breakdown
 )
 
+
 @tool
 def get_gcp_cost(
     project_id: str,
-    service_account_key_path: Optional[str] = None
+    service_account_key_path: Optional[str] = None,
+    time_range_days: Optional[int] = None,
+    start_date_iso: Optional[str] = None,
+    end_date_iso: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Get GCP cost breakdown for the current month for a given project.
+    Get GCP cost breakdown for a given project. Supports flexible date range queries.
     """
     credentials = get_gcp_credentials(service_account_key_path)
-    cost_data, err = get_gcp_cost_breakdown(credentials, project_id)
+    cost_summary, err = get_gcp_cost_breakdown(
+        credentials,
+        project_id,
+        time_range_days,
+        start_date_iso,
+        end_date_iso
+    )
 
     return {
         "project_id": project_id,
-        "start_date": datetime.utcnow().replace(day=1).strftime('%Y-%m-%d'),
-        "end_date": datetime.utcnow().strftime('%Y-%m-%d'),
-        "cost_summary": cost_data,
+        **cost_summary,
         "error": err
     }
 
