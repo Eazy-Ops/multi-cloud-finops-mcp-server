@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from langchain.tools import tool
+from google.cloud import resourcemanager_v3
 
 from clouds.gcp.client import get_gcp_credentials
 from clouds.gcp.utils import (
@@ -105,3 +106,36 @@ def run_gcp_finops_audit(
             "budgets": budgets_err,
         }
     }
+
+
+@tool
+def list_gcp_projects(service_account_key_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    List all GCP projects accessible with the provided service account.
+
+    Args:
+        service_account_key_path: if not given by user use the default service account.
+
+    Returns:
+        A dictionary with:
+            - `projects`: List of dictionaries containing `project_id` and `name`.
+            - `error`: Any error encountered during retrieval.
+    """
+    try:
+        credentials = get_gcp_credentials(service_account_key_path)
+        client = resourcemanager_v3.ProjectsClient(credentials=credentials)
+        request = resourcemanager_v3.ListProjectsRequest(parent="organizations/-")
+
+        projects = []
+        for project in client.list_projects(request=request):
+            projects.append({
+                "project_id": project.project_id,
+                "name": project.display_name,
+                "state": resourcemanager_v3.Project.State(project.state).name,
+            })
+
+        return {"projects": projects, "error": None}
+
+    except Exception as e:
+        return {"projects": [], "error": str(e)}
+

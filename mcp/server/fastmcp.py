@@ -4,7 +4,7 @@ from langgraph.prebuilt import create_react_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from clouds.aws.tools import get_cost as get_aws_cost, run_finops_audit as run_aws_finops_audit
-from clouds.gcp.tools import get_gcp_cost, run_gcp_finops_audit
+from clouds.gcp.tools import get_gcp_cost, run_gcp_finops_audit, list_gcp_projects
 from clouds.azure.tools import get_azure_cost, run_azure_finops_audit
 
 
@@ -22,7 +22,7 @@ llm = ChatGoogleGenerativeAI(
 
 tools = [
     get_aws_cost, run_aws_finops_audit,
-    get_gcp_cost, run_gcp_finops_audit,
+    get_gcp_cost, run_gcp_finops_audit, list_gcp_projects,
     get_azure_cost, run_azure_finops_audit
 ]
 
@@ -33,6 +33,7 @@ prompt = ChatPromptTemplate.from_messages([
     ("system", "You are a Multi-Cloud FinOps assistant. You can help users:\n"
                "- Get cost breakdowns for AWS, GCP, Azure\n"
                "- Run FinOps audits for cost-saving insights\n"
+               "- List Projects, Profiles, Subscriptions for AWS, GCP, Azure\n"
                "Decide which cloud's tool to invoke based on user input."),
     MessagesPlaceholder(variable_name="messages")
 ])

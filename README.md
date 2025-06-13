@@ -115,7 +115,7 @@ Then ask questions in Claude Desktop, Amazon Q, or any MCP-compatible client:
 
 ## 💬 Example Prompts
 
-### 📊 Audit Azure for idle VMs and unattached disks
+### 📊 AZURE finops audit for subscription
 
 ```json
 {
@@ -130,7 +130,7 @@ Then ask questions in Claude Desktop, Amazon Q, or any MCP-compatible client:
 }
 ```
 
-### 💸 Get AWS cost grouped by service for last 15 days
+### 💸 AWS cost break down for the current month profile any_locally_configured_profile
 
 ```json
 {
@@ -143,7 +143,7 @@ Then ask questions in Claude Desktop, Amazon Q, or any MCP-compatible client:
 }
 ```
 
-### ☁️ Break down GCP spend in last 7 days
+### ☁️ Break down GCP spend in last 7 days project id dev-ezo
 
 ```json
 {
