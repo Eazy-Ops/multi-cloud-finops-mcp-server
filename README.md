@@ -100,6 +100,10 @@ export AZURE_CLIENT_SECRET=your-client-secret
 ```bash
 poetry run python -m mcp.server.fastmcp
 ```
+### 🔹 OR
+```bash
+python main.py
+```
 
 Then ask questions in Claude Desktop, Amazon Q, or any MCP-compatible client:
 

@@ -20,7 +20,27 @@ def get_gcp_cost(
     end_date_iso: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Get GCP cost breakdown for a given project. Supports flexible date range queries.
+    Retrieve GCP cost breakdown for a specific project over a defined time period.
+
+    The time period can be specified either by:
+    - `time_range_days`: Number of days from today (e.g., last 7 days), or
+    - `start_date_iso` and `end_date_iso`: Specific date range in YYYY-MM-DD format.
+
+    If no time period is provided, the default is the current month-to-date.
+
+    Args:
+        project_id: GCP project ID to fetch cost data for.
+        service_account_key_path: Optional. Path to the GCP service account JSON key file.
+        time_range_days: Optional. Number of days for which to retrieve cost data.
+        start_date_iso: Optional. Start date in YYYY-MM-DD format (overrides `time_range_days`).
+        end_date_iso: Optional. End date in YYYY-MM-DD format (overrides `time_range_days`).
+
+    Returns:
+        A dictionary containing:
+            - `project_id`: The input project ID.
+            - `total_cost`: Total cost over the time period.
+            - `cost_by_service`: Breakdown of cost by GCP services.
+            - `error`: Any error encountered during cost retrieval.
     """
     credentials = get_gcp_credentials(service_account_key_path)
     cost_summary, err = get_gcp_cost_breakdown(
@@ -45,11 +65,26 @@ def run_gcp_finops_audit(
     service_account_key_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Run a GCP FinOps audit to find unused resources and report budget.
-    Checks:
-        - Terminated (idle) Compute Engine VMs
-        - Unattached Persistent Disks
-        - Budget usage
+    Run a GCP FinOps audit for a given project and billing account.
+
+    The audit identifies common cost optimization opportunities, including:
+    - Stopped Virtual Machine (VM) instances.
+    - Unattached persistent disks.
+    - Current budget usage and status for the billing account.
+
+    Args:
+        project_id: GCP project ID to audit.
+        billing_account_id: Billing account ID associated with the GCP project.
+        service_account_key_path: Optional. Path to the GCP service account JSON key file.
+
+    Returns:
+        A dictionary containing:
+            - `project_id`: The audited project ID.
+            - `audit`: Dictionary with findings for:
+                - `stopped_vms`: List of stopped Compute Engine instances.
+                - `unattached_disks`: List of unattached persistent disks.
+                - `budget_status`: Current budget status from Cloud Billing.
+            - `errors`: Any errors encountered while gathering audit data.
     """
     credentials = get_gcp_credentials(service_account_key_path)
 

@@ -25,8 +25,27 @@ def get_cost(
     group_by: Optional[str] = "SERVICE",
 ) -> Dict[str, Any]:
     """
-    Get AWS cost breakdown for a profile using Cost Explorer.
-    Supports grouping, tag/dimension filters, and flexible time ranges.
+    Get cost data for a specified AWS profile for a single defined period.
+    The period can be defined by 'time_range_days' (last N days including today)
+    OR by explicit 'start_date_iso' and 'end_date_iso'.
+    If 'start_date_iso' and 'end_date_iso' are provided, they take precedence.
+    If no period is defined, defaults to the current month to date.
+    Tags can be provided as a list of "Key=Value" strings to filter costs.
+    Dimensions can be provided as a list of "Key=Value" strings to filter costs by specific dimensions.
+    If no tags or dimensions are provided, all costs will be returned.
+    Grouping can be done by a specific dimension, default is "SERVICE".
+
+    Args:
+        profile_name: The AWS CLI profile name to use.
+        all_profiles: If True, use all available profiles; otherwise, use the specified profiles.
+        time_range_days: Optional. Number of days for the cost data (e.g., last 7 days).
+        start_date_iso: Optional. The start date of the period (inclusive) in YYYY-MM-DD format.
+        end_date_iso: Optional. The end date of the period (inclusive) in YYYY-MM-DD format.
+        tags: Optional. List of cost allocation tags (e.g., ["Team=DevOps", "Env=Prod"]).
+        dimensions: Optional. List of dimensions to filter costs by (e.g., ["REGION=us-east-1", "AZ=us-east-1a"]).
+        group_by: Optional. The dimension to group costs by (default is "SERVICE").
+    Returns:
+        Dict: Processed cost data for the specified period.
     """
 
     session, _, b = get_boto3_session(profile_name)
@@ -89,12 +108,20 @@ def get_cost(
 @tool
 def run_finops_audit(profile_name: str, regions: List[str]) -> Dict[str, Any]:
     """
-    Run a FinOps audit report to find unused AWS resources.
-    Checks:
-        - Stopped EC2 instances
-        - Unattached EBS volumes
-        - Unassociated EIPs
-        - Budget usage
+    Get FinOps Audit Report findings for your AWS CLI Profiles.
+    Each Audit Report includes:
+        Stopped EC2 Instances,
+        Un-attached EBS VOlumes,
+        Un-associated EIPs,
+        Budget Status for your one or more specified AWS profiles. Except the budget status, other resources are region specific.
+
+    Args:
+        List of AWS CLI profiles as strings.
+        List of AWS Regions as strings.
+        all_profiles: If True, use all available profiles; otherwise, use the specified profiles.
+
+    Returns:
+        Processed Audit data for specified CLI Profile and regions in JSON(dict) format with errors caught from APIs.
     """
 
     session, _, b = get_boto3_session(profile_name)

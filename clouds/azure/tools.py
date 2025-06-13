@@ -17,7 +17,21 @@ def get_azure_cost(
 ) -> Dict[str, Any]:
 
     """
-    Get Azure cost breakdown for the current month for a given project.
+    Get cost data for a specified Azure subscription for a single defined period.
+    The period is defined either by 'time_range_days' (last N days including today),
+    or by explicit 'start_date_iso' and 'end_date_iso' values.
+    If both are provided, explicit dates take precedence.
+    If no period is defined, defaults to the current month to date.
+
+    Args:
+        subscription_id: Azure Subscription ID.
+        tenant_id: Optional. Azure Active Directory tenant ID.
+        client_id: Optional. Azure client ID for service principal authentication.
+        client_secret: Optional. Azure client secret for service principal authentication.
+
+    Returns:
+        Dict: Processed cost summary for the specified subscription and period.
+              Includes error details if any occurred during data retrieval.
     """
     credentials = get_azure_credentials(tenant_id, client_id, client_secret)
     cost_data, error = get_cost_breakdown(credentials, subscription_id)
@@ -43,11 +57,21 @@ def run_azure_finops_audit(
 ) -> Dict[str, Any]:
 
     """
-    Run Azure FinOps audit to find unused resources and report budget.
-    Checks:
-        - Terminated (idle) Compute Engine VMs
-        - Unattached Persistent Disks
-        - Budget usage
+    Run a FinOps audit for a specified Azure subscription across one or more regions.
+    The audit includes:
+        - Stopped Virtual Machines (VMs),
+        - Unattached Managed Disks,
+        - Current Budget Status.
+
+    Args:
+        subscription_id: Azure Subscription ID.
+        regions: List of Azure region names to audit (e.g., ["eastus", "westus2"]).
+        tenant_id: Optional. Azure Active Directory tenant ID.
+        client_id: Optional. Azure client ID for service principal authentication.
+        client_secret: Optional. Azure client secret for service principal authentication.
+
+    Returns:
+        Dict: Audit findings and any error messages encountered per component.
     """
     credentials = get_azure_credentials(tenant_id, client_id, client_secret)
 
