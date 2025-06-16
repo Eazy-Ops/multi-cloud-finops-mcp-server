@@ -3,7 +3,8 @@ from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from clouds.aws.tools import get_cost as get_aws_cost, run_finops_audit as run_aws_finops_audit, list_aws_profiles
+from clouds.aws.tools import get_cost as get_aws_cost, run_finops_audit as run_aws_finops_audit, list_aws_profiles, \
+    analyze_rds_instances, analyze_ec2_rightsizing, analyze_s3_optimization
 from clouds.gcp.tools import get_gcp_cost, run_gcp_finops_audit, list_gcp_projects, list_gke_clusters, \
     list_sql_instances, get_gcp_logs
 from clouds.azure.tools import get_azure_cost, run_azure_finops_audit
@@ -23,7 +24,7 @@ llm = ChatGoogleGenerativeAI(
 )
 
 tools = [
-    get_aws_cost, run_aws_finops_audit, list_aws_profiles,
+    get_aws_cost, run_aws_finops_audit, list_aws_profiles,analyze_rds_instances, analyze_ec2_rightsizing, analyze_s3_optimization,
     get_gcp_cost, run_gcp_finops_audit, list_gcp_projects, list_gke_clusters, list_sql_instances, get_gcp_logs,
     get_azure_cost, run_azure_finops_audit
 ]
