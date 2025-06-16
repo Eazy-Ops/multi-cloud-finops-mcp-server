@@ -148,3 +148,22 @@ def run_finops_audit(profile_name: str, regions: List[str]) -> Dict[str, Any]:
             "budgets": budgets_err,
         },
     }
+
+
+@tool
+def list_aws_profiles(profile_name: Optional[str] = None,) -> Dict[str, Any]:
+    """
+    List all AWS CLI profiles available in the current environment.
+
+    Returns:
+        A dictionary containing:
+            - `profiles`: List of available AWS profile names.
+            - `error`: Any error encountered during retrieval.
+    """
+    try:
+        session, _, b = get_boto3_session(profile_name=profile_name)
+        print(session, "==============")
+        profiles = session.available_profiles
+        return {"profiles": profiles, "error": None}
+    except Exception as e:
+        return {"profiles": [], "error": str(e)}

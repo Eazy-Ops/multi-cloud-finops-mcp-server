@@ -74,10 +74,11 @@ def get_budget_data(credentials, billing_account_id: str) -> Tuple[List[Dict[str
 
 
 
+from typing import Dict, Tuple, Any, Optional
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, Dict, Any
 from google.cloud import bigquery
 from google.api_core.exceptions import NotFound
+
 
 def get_gcp_cost_breakdown(
     credentials,
@@ -86,7 +87,8 @@ def get_gcp_cost_breakdown(
     start_date_iso: Optional[str] = None,
     end_date_iso: Optional[str] = None,
     dataset: str = "dev-ezo.dev_dataset",
-    table_prefix: str = "gcp_billing_export_"  # default table prefix
+    table_prefix: str = "gcp_billing_export_",
+    region_wise: bool = False
 ) -> Tuple[Dict[str, Any], str]:
     try:
         now = datetime.utcnow().date()
@@ -103,60 +105,136 @@ def get_gcp_cost_breakdown(
 
         bq_client = bigquery.Client(credentials=credentials, project=project_id)
         table_name = f"`{dataset}.gcp_billing_export_*`"
-        print(table_name, "===============" , project_id)
-        query = f"""
-        SELECT
-          service.description AS service,
-          SUM(cost) AS total_cost,
-          currency
-        FROM {table_name}
-        WHERE usage_start_time BETWEEN '{start}' AND '{end}'
-        AND project.id IN ('{project_id}')
-        GROUP BY service, currency
-        ORDER BY total_cost DESC
-        """
+        print(table_name, "===============", project_id)
+
+        if region_wise:
+            query = f"""
+            SELECT
+              service.description AS service,
+              location.region AS region,
+              SUM(cost) AS total_cost,
+              currency
+            FROM {table_name}
+            WHERE usage_start_time BETWEEN '{start}' AND '{end}'
+              AND project.id = '{project_id}'
+            GROUP BY service, region, currency
+            ORDER BY region, total_cost DESC
+            """
+        else:
+            query = f"""
+            SELECT
+              service.description AS service,
+              SUM(cost) AS total_cost,
+              currency
+            FROM {table_name}
+            WHERE usage_start_time BETWEEN '{start}' AND '{end}'
+              AND project.id = '{project_id}'
+            GROUP BY service, currency
+            ORDER BY total_cost DESC
+            """
 
         query_job = bq_client.query(query)
         results = query_job.result()
 
-        cost_by_service = {}
-        total_cost = 0
+        total_cost = 0.0
         currency = "USD"
 
-        for row in results:
-            cost_by_service[row.service] = float(row.total_cost)
-            total_cost += float(row.total_cost)
-            currency = row.currency
+        if region_wise:
+            cost_by_region: Dict[str, Dict[str, float]] = {}
 
-        return {
-            "project_id": project_id,
-            "start_date": start.isoformat(),
-            "end_date": end.isoformat(),
-            "total_cost": round(total_cost, 2),
-            "currency": currency,
-            "cost_by_service": cost_by_service,
-        }, ""
+            for row in results:
+                service = row.service
+                region = row.region or "global"
+                cost = float(row.total_cost)
+                currency = row.currency
+
+                if region not in cost_by_region:
+                    cost_by_region[region] = {}
+                cost_by_region[region][service] = cost_by_region[region].get(service, 0.0) + cost
+                total_cost += cost
+
+            return {
+                "project_id": project_id,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "total_cost": round(total_cost, 2),
+                "currency": currency,
+                "cost_by_region": {
+                    region: {service: round(cost, 2) for service, cost in services.items()}
+                    for region, services in cost_by_region.items()
+                }
+            }, ""
+
+        else:
+            cost_by_service: Dict[str, float] = {}
+
+            for row in results:
+                service = row.service
+                cost = float(row.total_cost)
+                currency = row.currency
+
+                cost_by_service[service] = cost_by_service.get(service, 0.0) + cost
+                total_cost += cost
+
+            return {
+                "project_id": project_id,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "total_cost": round(total_cost, 2),
+                "currency": currency,
+                "cost_by_service": {
+                    k: round(v, 2) for k, v in cost_by_service.items()
+                }
+            }, ""
 
     except NotFound:
-        # Fallback to mock
+        # Fallback mock for region_wise or service_wise
         mock_services = [
-            {"service": "Compute Engine", "cost": 102.5, "currency": "USD"},
-            {"service": "Cloud Storage", "cost": 21.8, "currency": "USD"},
+            {"service": "Compute Engine", "cost": 102.5, "currency": "USD", "region": "us-central1"},
+            {"service": "Cloud Storage", "cost": 21.8, "currency": "USD", "region": "global"},
         ]
         total = sum(item["cost"] for item in mock_services)
-        grouped = {s["service"]: s["cost"] for s in mock_services}
 
-        return {
-            "project_id": project_id,
-            "start_date": start.isoformat(),
-            "end_date": end.isoformat(),
-            "total_cost": round(total, 2),
-            "currency": "USD",
-            "cost_by_service": grouped,
-            "note": "Returned mock data as no billing export was found."
-        }, ""
+        if region_wise:
+            grouped_region = {}
+            for item in mock_services:
+                region = item["region"]
+                service = item["service"]
+                cost = item["cost"]
+
+                if region not in grouped_region:
+                    grouped_region[region] = {}
+                grouped_region[region][service] = grouped_region[region].get(service, 0.0) + cost
+
+            return {
+                "project_id": project_id,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "total_cost": round(total, 2),
+                "currency": "USD",
+                "cost_by_region": grouped_region,
+                "note": "Returned mock region-wise data as no billing export was found."
+            }, ""
+
+        else:
+            grouped_service = {}
+            for item in mock_services:
+                service = item["service"]
+                cost = item["cost"]
+                grouped_service[service] = grouped_service.get(service, 0.0) + cost
+
+            return {
+                "project_id": project_id,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "total_cost": round(total, 2),
+                "currency": "USD",
+                "cost_by_service": grouped_service,
+                "note": "Returned mock service-wise data as no billing export was found."
+            }, ""
 
     except Exception as e:
         return {}, str(e)
+
 
 

@@ -26,6 +26,9 @@ azure-mgmt-compute = "^34.1.0"
 azure-mgmt-consumption = "^10.0.0"
 google-cloud-bigquery = "^3.34.0"
 google-cloud-resource-manager = "^1.14.2"
+google-cloud-container = "^2.57.0"
+google-cloud-logging = "^3.12.1"
+prompt-toolkit = "^3.0.51"
 
 
 [build-system]
