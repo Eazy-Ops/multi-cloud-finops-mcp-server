@@ -32,6 +32,7 @@ Powered by **LangChain**, **LangGraph**, and **Gemini Pro**, this tool makes Fin
 * 🧠 Natural language queries via Gemini Pro
 * 🧰 Cost breakdowns, FinOps audits, budget status
 * ⚙️ CLI or FastAPI-compatible architecture
+* 🧰 Quick analysis with actionable recommendations for high-cost resources.
 * 🛡️ Credentials never leave your machine (uses local SDK/CLI auth)
 
 ---
@@ -125,7 +126,7 @@ Then ask questions in Claude Desktop, Amazon Q, or any MCP-compatible client:
 
 ## 💬 Example Prompts
 
-### 📊 AZURE finops audit for subscription
+### 📊 AZURE finops audit for subscription_id id
 
 ```json
 {
@@ -165,7 +166,7 @@ Following RDS instances have CPU utilization under 2 percent:
 ```
 
 
-### ☁️ Break down GCP spend in last 7 days project id dev-ezo
+### ☁️ Break down GCP spend in last 7 days project id project_id
 
 ```json
 {
