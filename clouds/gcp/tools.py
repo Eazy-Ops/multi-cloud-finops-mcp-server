@@ -589,3 +589,297 @@ def analyze_gcp_disks(
 
     except Exception as e:
         return {"error": str(e), "recommendations": {}}
+
+
+@tool
+def analyze_gcp_snapshots(
+    project_id: str, service_account_key_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Analyze GCP disk and database snapshots for cost optimization opportunities.
+
+    Args:
+        project_id: GCP project ID to analyze.
+        service_account_key_path: Optional. Path to the service account JSON key file.
+
+    Returns:
+        Dictionary containing snapshot optimization recommendations with resource details.
+    """
+    from google.cloud import compute_v1
+    from googleapiclient.discovery import build
+
+    try:
+        credentials = get_gcp_credentials(service_account_key_path)
+        snapshot_client = compute_v1.SnapshotsClient(credentials=credentials)
+        recommendations = {
+            "old_disk_snapshots": [],
+            "unused_disk_snapshots": [],
+            "large_snapshots": [],
+            "database_snapshots": [],
+            "available_snapshots": [],
+        }
+
+        for snapshot in snapshot_client.list(project=project_id):
+            try:
+                snapshot_details = {
+                    "snapshot_name": snapshot.name,
+                    "disk_size_gb": snapshot.disk_size_gb,
+                    "creation_timestamp": snapshot.creation_timestamp,
+                    "status": snapshot.status,
+                    "source_disk": snapshot.source_disk.split("/")[-1] if snapshot.source_disk else None,
+                    "labels": dict(snapshot.labels),
+                }
+
+                recommendations["available_snapshots"].append(snapshot_details)
+
+                # Old snapshot > 90 days
+                creation_time = datetime.fromisoformat(snapshot.creation_timestamp.replace("Z", "+00:00"))
+                age_days = (datetime.now(creation_time.tzinfo) - creation_time).days
+                if age_days > 90:
+                    recommendations["old_disk_snapshots"].append({
+                        "resource_details": snapshot_details,
+                        "recommendation": {
+                            "action": "Review and delete if unnecessary",
+                            "reason": f"Snapshot is {age_days} days old",
+                            "suggestions": [
+                                "Delete if no longer needed",
+                                "Archive to cold storage",
+                                "Implement lifecycle rules"
+                            ],
+                        },
+                    })
+
+                # Large snapshot > 100 GB
+                if snapshot.disk_size_gb > 100:
+                    recommendations["large_snapshots"].append({
+                        "resource_details": snapshot_details,
+                        "recommendation": {
+                            "action": "Review large snapshot necessity",
+                            "reason": f"Snapshot size is {snapshot.disk_size_gb} GB",
+                            "suggestions": [
+                                "Use incremental snapshots",
+                                "Review full-disk usage",
+                            ],
+                        },
+                    })
+
+                # Unused snapshots (no source disk)
+                if not snapshot.source_disk:
+                    recommendations["unused_disk_snapshots"].append({
+                        "resource_details": snapshot_details,
+                        "recommendation": {
+                            "action": "Delete unused snapshot",
+                            "reason": "Source disk no longer exists",
+                            "considerations": "Ensure snapshot is not needed for recovery",
+                        },
+                    })
+
+            except Exception as snapshot_e:
+                print(f"Warning: Could not analyze snapshot {snapshot.name}: {snapshot_e}")
+                continue
+
+        # Cloud SQL snapshot analysis
+        try:
+            sqladmin = build("sqladmin", "v1", credentials=credentials)
+            instances = sqladmin.instances().list(project=project_id).execute()
+
+            for instance in instances.get("items", []):
+                try:
+                    backups = sqladmin.backupRuns().list(
+                        project=project_id, instance=instance["name"]
+                    ).execute()
+
+                    for backup in backups.get("items", []):
+                        backup_details = {
+                            "backup_id": backup.get("id"),
+                            "instance_name": instance["name"],
+                            "database_version": instance.get("databaseVersion"),
+                            "start_time": backup.get("startTime"),
+                            "end_time": backup.get("endTime"),
+                            "status": backup.get("status"),
+                            "type": backup.get("backupKind"),
+                        }
+
+                        recommendations["database_snapshots"].append(backup_details)
+
+                        # Old backup check (> 30 days)
+                        if backup.get("startTime") and backup.get("status") == "SUCCESSFUL":
+                            start_time = datetime.fromisoformat(backup["startTime"].replace("Z", "+00:00"))
+                            age = (datetime.now(start_time.tzinfo) - start_time).days
+                            if age > 30:
+                                recommendations["old_disk_snapshots"].append({
+                                    "resource_details": backup_details,
+                                    "recommendation": {
+                                        "action": "Review old database backups",
+                                        "reason": f"Backup is {age} days old",
+                                        "suggestions": [
+                                            "Reduce retention",
+                                            "Use PITR if available",
+                                            "Clean up older backups"
+                                        ],
+                                    },
+                                })
+
+                except Exception as e:
+                    print(f"Warning: Could not process backups for instance {instance['name']}: {e}")
+                    continue
+
+        except Exception as sql_e:
+            print(f"Warning: Could not analyze Cloud SQL: {sql_e}")
+
+        return recommendations
+
+    except Exception as e:
+        return {
+            "error": str(e),
+            "recommendations": ["Ensure valid service account credentials and required APIs are enabled."]
+        }
+
+
+@tool
+def analyze_gcp_static_ips(
+    project_id: str, service_account_key_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Analyze GCP static IP addresses for cost optimization opportunities.
+
+    Args:
+        project_id: GCP project ID to analyze
+        service_account_key_path: Optional. Path to the service account JSON key file.
+
+    Returns:
+        Dictionary containing static IP optimization recommendations with resource details.
+    """
+    from google.cloud import compute_v1, monitoring_v3
+
+    try:
+        credentials = get_gcp_credentials(service_account_key_path)
+
+        address_client = compute_v1.AddressesClient(credentials=credentials)
+        region_client = compute_v1.RegionsClient(credentials=credentials)
+
+        recommendations = {
+            "unused_static_ips": [],
+            "expensive_regional_ips": [],
+            "unattached_global_ips": [],
+            "available_ips": [],
+        }
+
+        # Get all regions
+        regions = [region.name for region in region_client.list(project=project_id)]
+
+        for region in regions:
+            try:
+                # Analyze regional static IPs
+                for address in address_client.list(project=project_id, region=region):
+                    try:
+                        address_details = {
+                            "address_name": address.name,
+                            "region": region,
+                            "address": address.address,
+                            "address_type": address.address_type,
+                            "network_tier": address.network_tier,
+                            "users": address.users,
+                            "labels": address.labels,
+                        }
+
+                        recommendations["available_ips"].append(address_details)
+
+                        # Check for unused static IPs
+                        if not address.users:
+                            recommendations["unused_static_ips"].append(
+                                {
+                                    "resource_details": address_details,
+                                    "recommendation": {
+                                        "action": "Release unused static IP",
+                                        "reason": "Static IP is not attached to any resource",
+                                        "considerations": "GCP charges for unassigned static IPs",
+                                    },
+                                }
+                            )
+
+                        # Check for expensive regional IPs (Premium tier)
+                        if address.network_tier == "PREMIUM":
+                            recommendations["expensive_regional_ips"].append(
+                                {
+                                    "resource_details": address_details,
+                                    "recommendation": {
+                                        "action": "Consider using Standard tier",
+                                        "reason": "Static IP is using Premium network tier",
+                                        "suggestions": [
+                                            "Switch to Standard tier for cost savings",
+                                            "Use Premium tier only for global load balancing",
+                                            "Review if Premium features are actually needed",
+                                        ],
+                                    },
+                                }
+                            )
+
+                    except Exception as address_e:
+                        print(f"Warning: Could not analyze address {address.name}: {address_e}")
+                        continue
+
+            except Exception as region_e:
+                print(f"Warning: Could not analyze region {region}: {region_e}")
+                continue
+
+        # Analyze global static IPs
+        try:
+            global_address_client = compute_v1.GlobalAddressesClient(credentials=credentials)
+            
+            for address in global_address_client.list(project=project_id):
+                try:
+                    address_details = {
+                        "address_name": address.name,
+                        "address": address.address,
+                        "address_type": address.address_type,
+                        "network_tier": address.network_tier,
+                        "users": address.users,
+                        "labels": address.labels,
+                    }
+
+                    recommendations["available_ips"].append(address_details)
+
+                    # Check for unattached global IPs
+                    if not address.users:
+                        recommendations["unattached_global_ips"].append(
+                            {
+                                "resource_details": address_details,
+                                "recommendation": {
+                                    "action": "Release unused global static IP",
+                                    "reason": "Global static IP is not attached to any resource",
+                                    "considerations": "Global IPs are more expensive than regional IPs",
+                                },
+                            }
+                        )
+
+                except Exception as global_address_e:
+                    print(f"Warning: Could not analyze global address {address.name}: {global_address_e}")
+                    continue
+
+        except Exception as global_e:
+            print(f"Warning: Could not analyze global addresses: {global_e}")
+
+        # Check for IP usage metrics (if available)
+        try:
+            interval = monitoring_v3.TimeInterval(
+                {
+                    "end_time": {"seconds": int(datetime.now().timestamp())},
+                    "start_time": {
+                        "seconds": int(
+                            (datetime.now() - timedelta(days=30)).timestamp()
+                        )
+                    },
+                }
+            )
+
+            # This would require specific IP addresses to check metrics
+            # For now, we'll focus on the static analysis above
+
+        except Exception as metrics_e:
+            print(f"Warning: Could not analyze IP usage metrics: {metrics_e}")
+
+        return recommendations
+
+    except Exception as e:
+        return {"error": str(e), "recommendations": {}}

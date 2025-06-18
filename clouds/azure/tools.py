@@ -701,3 +701,201 @@ def analyze_azure_instances(
 
     except Exception as e:
         return {"error": str(e), "recommendations": {}}
+
+
+@tool
+def analyze_azure_snapshots(
+    subscription_id: str, service_principal_credentials: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Analyze Azure managed disk snapshots and database backups for cost optimization opportunities.
+
+    Args:
+        subscription_id: Azure subscription ID
+        service_principal_credentials: Optional. Dictionary containing service principal credentials:
+            {
+                'client_id': 'your_client_id',
+                'client_secret': 'your_client_secret',
+                'tenant_id': 'your_tenant_id'
+            }
+
+    Returns:
+        Dictionary containing snapshot optimization recommendations with resource details
+    """
+    try:
+        credentials = get_azure_credentials(service_principal_credentials)
+        compute_client = ComputeManagementClient(credentials, subscription_id)
+
+        recommendations = {
+            "old_disk_snapshots": [],
+            "unused_disk_snapshots": [],
+            "large_disk_snapshots": [],
+            "available_snapshots": [],
+        }
+
+        # Analyze managed disk snapshots
+        snapshots = compute_client.snapshots.list()
+        for snapshot in snapshots:
+            try:
+                snapshot_details = {
+                    "snapshot_id": snapshot.id,
+                    "name": snapshot.name,
+                    "location": snapshot.location,
+                    "disk_size_gb": snapshot.disk_size_gb,
+                    "sku": snapshot.sku.name if snapshot.sku else None,
+                    "creation_time": snapshot.time_created.isoformat() if snapshot.time_created else None,
+                    "os_type": str(snapshot.os_type) if snapshot.os_type else None,
+                    "source_disk_id": snapshot.creation_data.source_resource_id if snapshot.creation_data else None,
+                    "tags": snapshot.tags,
+                }
+
+                recommendations["available_snapshots"].append(snapshot_details)
+
+                # Check for old snapshots (older than 90 days)
+                if snapshot.time_created:
+                    age_days = (datetime.utcnow() - snapshot.time_created.replace(tzinfo=None)).days
+                    if age_days > 90:
+                        recommendations["old_disk_snapshots"].append({
+                            "resource_details": snapshot_details,
+                            "recommendation": {
+                                "action": "Review and delete if unnecessary",
+                                "reason": f"Snapshot is {age_days} days old",
+                                "suggestions": [
+                                    "Delete if no longer needed",
+                                    "Archive to cheaper storage",
+                                    "Implement lifecycle policies"
+                                ],
+                            },
+                        })
+
+                # Check for large snapshots (> 100 GB)
+                if snapshot.disk_size_gb and snapshot.disk_size_gb > 100:
+                    recommendations["large_disk_snapshots"].append({
+                        "resource_details": snapshot_details,
+                        "recommendation": {
+                            "action": "Review large snapshot necessity",
+                            "reason": f"Snapshot size is {snapshot.disk_size_gb} GB",
+                            "suggestions": [
+                                "Use incremental snapshots",
+                                "Review full-disk usage",
+                                "Consider compression"
+                            ],
+                        },
+                    })
+
+                # Check for unused snapshots (no source disk)
+                if not snapshot.creation_data or not snapshot.creation_data.source_resource_id:
+                    recommendations["unused_disk_snapshots"].append({
+                        "resource_details": snapshot_details,
+                        "recommendation": {
+                            "action": "Delete unused snapshot",
+                            "reason": "Source disk no longer exists",
+                            "considerations": "Ensure snapshot is not needed for recovery",
+                        },
+                    })
+
+            except Exception as snapshot_e:
+                print(f"Warning: Could not analyze snapshot {snapshot.name}: {snapshot_e}")
+                continue
+
+        return recommendations
+
+    except Exception as e:
+        return {"error": str(e), "recommendations": {}}
+
+
+@tool
+def analyze_azure_static_ips(
+    subscription_id: str, service_principal_credentials: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Analyze Azure static IP addresses for cost optimization opportunities.
+
+    Args:
+        subscription_id: Azure subscription ID
+        service_principal_credentials: Optional. Dictionary containing service principal credentials:
+            {
+                'client_id': 'your_client_id',
+                'client_secret': 'your_client_secret',
+                'tenant_id': 'your_tenant_id'
+            }
+
+    Returns:
+        Dictionary containing static IP optimization recommendations with resource details
+    """
+    try:
+        credentials = get_azure_credentials(service_principal_credentials)
+        network_client = NetworkManagementClient(credentials, subscription_id)
+
+        recommendations = {
+            "unused_public_ips": [],
+            "expensive_public_ips": [],
+            "available_ips": [],
+        }
+
+        # Get all resource groups
+        resource_groups = []
+        try:
+            from azure.mgmt.resource import ResourceManagementClient
+            resource_client = ResourceManagementClient(credentials, subscription_id)
+            resource_groups = [rg.name for rg in resource_client.resource_groups.list()]
+        except Exception as rg_e:
+            print(f"Warning: Could not list resource groups: {rg_e}")
+
+        for resource_group in resource_groups:
+            try:
+                # Analyze Public IP addresses
+                public_ips = network_client.public_ip_addresses.list(resource_group)
+                for public_ip in public_ips:
+                    try:
+                        ip_details = {
+                            "ip_id": public_ip.id,
+                            "name": public_ip.name,
+                            "resource_group": resource_group,
+                            "location": public_ip.location,
+                            "ip_address": public_ip.ip_address,
+                            "allocation_method": public_ip.public_ip_allocation_method,
+                            "sku": public_ip.sku.name if public_ip.sku else None,
+                            "tags": public_ip.tags,
+                        }
+
+                        recommendations["available_ips"].append(ip_details)
+
+                        # Check for unused public IPs
+                        if not public_ip.ip_configuration:
+                            recommendations["unused_public_ips"].append({
+                                "resource_details": ip_details,
+                                "recommendation": {
+                                    "action": "Delete unused public IP",
+                                    "reason": "Public IP is not associated with any resource",
+                                    "considerations": "Azure charges for unassigned public IPs",
+                                },
+                            })
+
+                        # Check for expensive public IPs (Standard SKU)
+                        if public_ip.sku and public_ip.sku.name == "Standard":
+                            recommendations["expensive_public_ips"].append({
+                                "resource_details": ip_details,
+                                "recommendation": {
+                                    "action": "Consider using Basic SKU",
+                                    "reason": "Public IP is using Standard SKU",
+                                    "suggestions": [
+                                        "Switch to Basic SKU for cost savings",
+                                        "Use Standard SKU only for specific features",
+                                        "Review if Standard features are needed"
+                                    ],
+                                },
+                            })
+
+                    except Exception as ip_e:
+                        print(f"Warning: Could not analyze public IP {public_ip.name}: {ip_e}")
+                        continue
+
+            except Exception as rg_network_e:
+                print(f"Warning: Could not analyze network resources in resource group {resource_group}: {rg_network_e}")
+                continue
+
+        return recommendations
+
+    except Exception as e:
+        return {"error": str(e), "recommendations": {}}

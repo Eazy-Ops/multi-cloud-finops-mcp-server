@@ -989,3 +989,256 @@ def analyze_aws_network(
             continue
 
     return recommendations
+
+
+@tool
+def analyze_aws_snapshots(
+    profile_name: str, regions: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Analyze AWS EBS and RDS snapshots for cost optimization opportunities.
+
+    Args:
+        profile_name: AWS profile name
+        regions: Optional list of regions to analyze. If not provided, analyzes all regions.
+
+    Returns:
+        Dictionary containing snapshot optimization recommendations with resource details
+    """
+    session, _, _ = get_boto3_session(profile_name)
+    ec2 = session.client("ec2")
+    rds = session.client("rds")
+
+    # If regions are not provided, retrieve all regions
+    if not regions:
+        regions = [
+            r["RegionName"] for r in ec2.describe_regions(AllRegions=False)["Regions"]
+        ]
+
+    recommendations = {
+        "old_ebs_snapshots": [],
+        "unused_ebs_snapshots": [],
+        "large_ebs_snapshots": [],
+        "old_rds_snapshots": [],
+        "unused_rds_snapshots": [],
+        "available_snapshots": [],
+    }
+
+    for region in regions:
+        try:
+            ec2 = session.client("ec2", region_name=region)
+            rds = session.client("rds", region_name=region)
+
+            # Analyze EBS snapshots
+            snapshots = ec2.describe_snapshots(OwnerIds=["self"])
+            for snapshot in snapshots["Snapshots"]:
+                try:
+                    snapshot_details = {
+                        "snapshot_id": snapshot["SnapshotId"],
+                        "region": region,
+                        "volume_size": snapshot["VolumeSize"],
+                        "start_time": snapshot["StartTime"].isoformat(),
+                        "state": snapshot["State"],
+                        "volume_id": snapshot.get("VolumeId"),
+                        "description": snapshot.get("Description", ""),
+                        "tags": {tag["Key"]: tag["Value"] for tag in snapshot.get("Tags", [])},
+                    }
+
+                    recommendations["available_snapshots"].append(snapshot_details)
+
+                    # Check for old snapshots (older than 90 days)
+                    age_days = (datetime.utcnow() - snapshot["StartTime"].replace(tzinfo=None)).days
+                    if age_days > 90:
+                        recommendations["old_ebs_snapshots"].append({
+                            "resource_details": snapshot_details,
+                            "recommendation": {
+                                "action": "Review and delete if unnecessary",
+                                "reason": f"Snapshot is {age_days} days old",
+                                "suggestions": [
+                                    "Delete if no longer needed",
+                                    "Archive to S3 Glacier if retention required",
+                                    "Implement lifecycle policies"
+                                ],
+                            },
+                        })
+
+                    # Check for large snapshots (> 100 GB)
+                    if snapshot["VolumeSize"] > 100:
+                        recommendations["large_ebs_snapshots"].append({
+                            "resource_details": snapshot_details,
+                            "recommendation": {
+                                "action": "Review large snapshot necessity",
+                                "reason": f"Snapshot size is {snapshot['VolumeSize']} GB",
+                                "suggestions": [
+                                    "Use incremental snapshots",
+                                    "Review full-volume usage",
+                                    "Consider compression"
+                                ],
+                            },
+                        })
+
+                    # Check for unused snapshots (no source volume)
+                    if not snapshot.get("VolumeId"):
+                        recommendations["unused_ebs_snapshots"].append({
+                            "resource_details": snapshot_details,
+                            "recommendation": {
+                                "action": "Delete unused snapshot",
+                                "reason": "Source volume no longer exists",
+                                "considerations": "Ensure snapshot is not needed for recovery",
+                            },
+                        })
+
+                except Exception as snapshot_e:
+                    print(f"Warning: Could not analyze snapshot {snapshot['SnapshotId']}: {snapshot_e}")
+                    continue
+
+            # Analyze RDS snapshots
+            try:
+                db_snapshots = rds.describe_db_snapshots(SnapshotType="manual")
+                for db_snapshot in db_snapshots["DBSnapshots"]:
+                    try:
+                        db_snapshot_details = {
+                            "snapshot_id": db_snapshot["DBSnapshotIdentifier"],
+                            "region": region,
+                            "db_instance_id": db_snapshot["DBInstanceIdentifier"],
+                            "engine": db_snapshot["Engine"],
+                            "allocated_storage": db_snapshot.get("AllocatedStorage", 0),
+                            "snapshot_create_time": db_snapshot["SnapshotCreateTime"].isoformat(),
+                            "status": db_snapshot["Status"],
+                            "snapshot_type": db_snapshot["SnapshotType"],
+                        }
+
+                        recommendations["available_snapshots"].append(db_snapshot_details)
+
+                        # Check for old RDS snapshots (older than 30 days)
+                        age_days = (datetime.utcnow() - db_snapshot["SnapshotCreateTime"].replace(tzinfo=None)).days
+                        if age_days > 30 and db_snapshot["Status"] == "available":
+                            recommendations["old_rds_snapshots"].append({
+                                "resource_details": db_snapshot_details,
+                                "recommendation": {
+                                    "action": "Review old database snapshots",
+                                    "reason": f"Snapshot is {age_days} days old",
+                                    "suggestions": [
+                                        "Reduce retention period",
+                                        "Use automated backups instead",
+                                        "Clean up older snapshots"
+                                    ],
+                                },
+                            })
+
+                        # Check for large RDS snapshots (> 500 GB)
+                        if db_snapshot.get("AllocatedStorage", 0) > 500:
+                            recommendations["large_ebs_snapshots"].append({
+                                "resource_details": db_snapshot_details,
+                                "recommendation": {
+                                    "action": "Review large database snapshot",
+                                    "reason": f"Snapshot size is {db_snapshot.get('AllocatedStorage', 0)} GB",
+                                    "suggestions": [
+                                        "Consider point-in-time recovery",
+                                        "Review backup strategy",
+                                        "Implement data archiving"
+                                    ],
+                                },
+                            })
+
+                    except Exception as db_snapshot_e:
+                        print(f"Warning: Could not analyze RDS snapshot {db_snapshot['DBSnapshotIdentifier']}: {db_snapshot_e}")
+                        continue
+
+            except Exception as rds_e:
+                print(f"Warning: Could not analyze RDS snapshots in region {region}: {rds_e}")
+
+        except Exception as region_e:
+            print(f"Warning: Could not analyze snapshots in region {region}: {region_e}")
+            continue
+
+    return recommendations
+
+
+@tool
+def analyze_aws_static_ips(
+    profile_name: str, regions: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Analyze AWS static IP addresses (Elastic IPs) for cost optimization opportunities.
+
+    Args:
+        profile_name: AWS profile name
+        regions: Optional list of regions to analyze. If not provided, analyzes all regions.
+
+    Returns:
+        Dictionary containing static IP optimization recommendations with resource details
+    """
+    session, _, _ = get_boto3_session(profile_name)
+    ec2 = session.client("ec2")
+
+    # If regions are not provided, retrieve all regions
+    if not regions:
+        regions = [
+            r["RegionName"] for r in ec2.describe_regions(AllRegions=False)["Regions"]
+        ]
+
+    recommendations = {
+        "unused_elastic_ips": [],
+        "expensive_elastic_ips": [],
+        "available_ips": [],
+    }
+
+    for region in regions:
+        try:
+            ec2 = session.client("ec2", region_name=region)
+
+            # Analyze Elastic IPs
+            eips = ec2.describe_addresses()
+            for eip in eips["Addresses"]:
+                try:
+                    eip_details = {
+                        "allocation_id": eip["AllocationId"],
+                        "public_ip": eip["PublicIp"],
+                        "region": region,
+                        "domain": eip["Domain"],
+                        "association_id": eip.get("AssociationId"),
+                        "instance_id": eip.get("InstanceId"),
+                        "network_interface_id": eip.get("NetworkInterfaceId"),
+                        "allocation_id": eip.get("AllocationId"),
+                        "tags": {tag["Key"]: tag["Value"] for tag in eip.get("Tags", [])},
+                    }
+
+                    recommendations["available_ips"].append(eip_details)
+
+                    # Check for unused Elastic IPs
+                    if not eip.get("AssociationId"):
+                        recommendations["unused_elastic_ips"].append({
+                            "resource_details": eip_details,
+                            "recommendation": {
+                                "action": "Release unused Elastic IP",
+                                "reason": "EIP is not associated with any resource",
+                                "considerations": "AWS charges for unassociated EIPs",
+                            },
+                        })
+
+                    # Check for expensive EIPs (VPC domain)
+                    if eip["Domain"] == "vpc":
+                        # VPC EIPs are more expensive than EC2-Classic EIPs
+                        recommendations["expensive_elastic_ips"].append({
+                            "resource_details": eip_details,
+                            "recommendation": {
+                                "action": "Review VPC EIP usage",
+                                "reason": "VPC EIPs have additional charges",
+                                "suggestions": [
+                                    "Use only when necessary for VPC resources",
+                                    "Consider using Application Load Balancer instead",
+                                    "Review if static IP is actually needed"
+                                ],
+                            },
+                        })
+
+                except Exception as eip_e:
+                    print(f"Warning: Could not analyze EIP {eip.get('AllocationId', 'unknown')}: {eip_e}")
+                    continue
+
+        except Exception as region_e:
+            print(f"Warning: Could not analyze static IPs in region {region}: {region_e}")
+            continue
+
+    return recommendations
