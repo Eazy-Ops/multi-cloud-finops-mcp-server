@@ -10,19 +10,23 @@ from prompt_toolkit import prompt
 from prompt_toolkit.history import InMemoryHistory
 
 from clouds.aws.tools import (analyze_aws_disks, analyze_aws_network,
+                              analyze_aws_snapshots, analyze_aws_static_ips,
                               analyze_cloudwatch_logs_cost,
                               analyze_ec2_rightsizing, analyze_rds_instances,
-                              analyze_s3_optimization, analyze_aws_static_ips, analyze_aws_snapshots)
+                              analyze_s3_optimization)
 from clouds.aws.tools import get_cost as get_aws_cost
 from clouds.aws.tools import list_aws_profiles
 from clouds.aws.tools import run_finops_audit as run_aws_finops_audit
-from clouds.azure.tools import (analyze_azure_disks, analyze_azure_network, analyze_azure_storage,
-                                get_azure_cost, run_azure_finops_audit, analyze_azure_instances,
-                                analyze_azure_static_ips, analyze_azure_snapshots)
-from clouds.gcp.tools import (analyze_gcp_disks, analyze_gcp_storage,
+from clouds.azure.tools import (analyze_azure_disks, analyze_azure_instances,
+                                analyze_azure_network, analyze_azure_snapshots,
+                                analyze_azure_static_ips,
+                                analyze_azure_storage, get_azure_cost,
+                                run_azure_finops_audit)
+from clouds.gcp.tools import (analyze_gcp_disks, analyze_gcp_snapshots,
+                              analyze_gcp_static_ips, analyze_gcp_storage,
                               get_gcp_cost, get_gcp_logs, list_gcp_projects,
                               list_gke_clusters, list_sql_instances,
-                              run_gcp_finops_audit, analyze_gcp_static_ips, analyze_gcp_snapshots)
+                              run_gcp_finops_audit)
 from config import google_api_key
 
 

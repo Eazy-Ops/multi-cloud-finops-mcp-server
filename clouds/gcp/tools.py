@@ -626,56 +626,70 @@ def analyze_gcp_snapshots(
                     "disk_size_gb": snapshot.disk_size_gb,
                     "creation_timestamp": snapshot.creation_timestamp,
                     "status": snapshot.status,
-                    "source_disk": snapshot.source_disk.split("/")[-1] if snapshot.source_disk else None,
+                    "source_disk": (
+                        snapshot.source_disk.split("/")[-1]
+                        if snapshot.source_disk
+                        else None
+                    ),
                     "labels": dict(snapshot.labels),
                 }
 
                 recommendations["available_snapshots"].append(snapshot_details)
 
                 # Old snapshot > 90 days
-                creation_time = datetime.fromisoformat(snapshot.creation_timestamp.replace("Z", "+00:00"))
+                creation_time = datetime.fromisoformat(
+                    snapshot.creation_timestamp.replace("Z", "+00:00")
+                )
                 age_days = (datetime.now(creation_time.tzinfo) - creation_time).days
                 if age_days > 90:
-                    recommendations["old_disk_snapshots"].append({
-                        "resource_details": snapshot_details,
-                        "recommendation": {
-                            "action": "Review and delete if unnecessary",
-                            "reason": f"Snapshot is {age_days} days old",
-                            "suggestions": [
-                                "Delete if no longer needed",
-                                "Archive to cold storage",
-                                "Implement lifecycle rules"
-                            ],
-                        },
-                    })
+                    recommendations["old_disk_snapshots"].append(
+                        {
+                            "resource_details": snapshot_details,
+                            "recommendation": {
+                                "action": "Review and delete if unnecessary",
+                                "reason": f"Snapshot is {age_days} days old",
+                                "suggestions": [
+                                    "Delete if no longer needed",
+                                    "Archive to cold storage",
+                                    "Implement lifecycle rules",
+                                ],
+                            },
+                        }
+                    )
 
                 # Large snapshot > 100 GB
                 if snapshot.disk_size_gb > 100:
-                    recommendations["large_snapshots"].append({
-                        "resource_details": snapshot_details,
-                        "recommendation": {
-                            "action": "Review large snapshot necessity",
-                            "reason": f"Snapshot size is {snapshot.disk_size_gb} GB",
-                            "suggestions": [
-                                "Use incremental snapshots",
-                                "Review full-disk usage",
-                            ],
-                        },
-                    })
+                    recommendations["large_snapshots"].append(
+                        {
+                            "resource_details": snapshot_details,
+                            "recommendation": {
+                                "action": "Review large snapshot necessity",
+                                "reason": f"Snapshot size is {snapshot.disk_size_gb} GB",
+                                "suggestions": [
+                                    "Use incremental snapshots",
+                                    "Review full-disk usage",
+                                ],
+                            },
+                        }
+                    )
 
                 # Unused snapshots (no source disk)
                 if not snapshot.source_disk:
-                    recommendations["unused_disk_snapshots"].append({
-                        "resource_details": snapshot_details,
-                        "recommendation": {
-                            "action": "Delete unused snapshot",
-                            "reason": "Source disk no longer exists",
-                            "considerations": "Ensure snapshot is not needed for recovery",
-                        },
-                    })
+                    recommendations["unused_disk_snapshots"].append(
+                        {
+                            "resource_details": snapshot_details,
+                            "recommendation": {
+                                "action": "Delete unused snapshot",
+                                "reason": "Source disk no longer exists",
+                                "considerations": "Ensure snapshot is not needed for recovery",
+                            },
+                        }
+                    )
 
             except Exception as snapshot_e:
-                print(f"Warning: Could not analyze snapshot {snapshot.name}: {snapshot_e}")
+                print(
+                    f"Warning: Could not analyze snapshot {snapshot.name}: {snapshot_e}"
+                )
                 continue
 
         # Cloud SQL snapshot analysis
@@ -685,9 +699,11 @@ def analyze_gcp_snapshots(
 
             for instance in instances.get("items", []):
                 try:
-                    backups = sqladmin.backupRuns().list(
-                        project=project_id, instance=instance["name"]
-                    ).execute()
+                    backups = (
+                        sqladmin.backupRuns()
+                        .list(project=project_id, instance=instance["name"])
+                        .execute()
+                    )
 
                     for backup in backups.get("items", []):
                         backup_details = {
@@ -703,25 +719,34 @@ def analyze_gcp_snapshots(
                         recommendations["database_snapshots"].append(backup_details)
 
                         # Old backup check (> 30 days)
-                        if backup.get("startTime") and backup.get("status") == "SUCCESSFUL":
-                            start_time = datetime.fromisoformat(backup["startTime"].replace("Z", "+00:00"))
+                        if (
+                            backup.get("startTime")
+                            and backup.get("status") == "SUCCESSFUL"
+                        ):
+                            start_time = datetime.fromisoformat(
+                                backup["startTime"].replace("Z", "+00:00")
+                            )
                             age = (datetime.now(start_time.tzinfo) - start_time).days
                             if age > 30:
-                                recommendations["old_disk_snapshots"].append({
-                                    "resource_details": backup_details,
-                                    "recommendation": {
-                                        "action": "Review old database backups",
-                                        "reason": f"Backup is {age} days old",
-                                        "suggestions": [
-                                            "Reduce retention",
-                                            "Use PITR if available",
-                                            "Clean up older backups"
-                                        ],
-                                    },
-                                })
+                                recommendations["old_disk_snapshots"].append(
+                                    {
+                                        "resource_details": backup_details,
+                                        "recommendation": {
+                                            "action": "Review old database backups",
+                                            "reason": f"Backup is {age} days old",
+                                            "suggestions": [
+                                                "Reduce retention",
+                                                "Use PITR if available",
+                                                "Clean up older backups",
+                                            ],
+                                        },
+                                    }
+                                )
 
                 except Exception as e:
-                    print(f"Warning: Could not process backups for instance {instance['name']}: {e}")
+                    print(
+                        f"Warning: Could not process backups for instance {instance['name']}: {e}"
+                    )
                     continue
 
         except Exception as sql_e:
@@ -732,7 +757,9 @@ def analyze_gcp_snapshots(
     except Exception as e:
         return {
             "error": str(e),
-            "recommendations": ["Ensure valid service account credentials and required APIs are enabled."]
+            "recommendations": [
+                "Ensure valid service account credentials and required APIs are enabled."
+            ],
         }
 
 
@@ -750,7 +777,7 @@ def analyze_gcp_static_ips(
     Returns:
         Dictionary containing static IP optimization recommendations with resource details.
     """
-    from google.cloud import compute_v1, monitoring_v3
+    from google.cloud import compute_v1
 
     try:
         credentials = get_gcp_credentials(service_account_key_path)
@@ -816,7 +843,9 @@ def analyze_gcp_static_ips(
                             )
 
                     except Exception as address_e:
-                        print(f"Warning: Could not analyze address {address.name}: {address_e}")
+                        print(
+                            f"Warning: Could not analyze address {address.name}: {address_e}"
+                        )
                         continue
 
             except Exception as region_e:
@@ -825,8 +854,10 @@ def analyze_gcp_static_ips(
 
         # Analyze global static IPs
         try:
-            global_address_client = compute_v1.GlobalAddressesClient(credentials=credentials)
-            
+            global_address_client = compute_v1.GlobalAddressesClient(
+                credentials=credentials
+            )
+
             for address in global_address_client.list(project=project_id):
                 try:
                     address_details = {
@@ -854,30 +885,13 @@ def analyze_gcp_static_ips(
                         )
 
                 except Exception as global_address_e:
-                    print(f"Warning: Could not analyze global address {address.name}: {global_address_e}")
+                    print(
+                        f"Warning: Could not analyze global address {address.name}: {global_address_e}"
+                    )
                     continue
 
         except Exception as global_e:
             print(f"Warning: Could not analyze global addresses: {global_e}")
-
-        # Check for IP usage metrics (if available)
-        try:
-            interval = monitoring_v3.TimeInterval(
-                {
-                    "end_time": {"seconds": int(datetime.now().timestamp())},
-                    "start_time": {
-                        "seconds": int(
-                            (datetime.now() - timedelta(days=30)).timestamp()
-                        )
-                    },
-                }
-            )
-
-            # This would require specific IP addresses to check metrics
-            # For now, we'll focus on the static analysis above
-
-        except Exception as metrics_e:
-            print(f"Warning: Could not analyze IP usage metrics: {metrics_e}")
 
         return recommendations
 
