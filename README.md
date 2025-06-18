@@ -19,11 +19,10 @@ Powered by **LangChain**, **LangGraph**, and **Gemini Pro**, this tool makes Fin
 ## 🎥 Demo Videos
 
 **Getting Started with FastMCP:**
-[![FastMCP Demo](https://cdn.loom.com/sessions/thumbnails/0d875df356574d31a2ea16c8d809b2dc-with-play.gif)](https://www.loom.com/share/0d875df356574d31a2ea16c8d809b2dc)
+https://www.loom.com/share/0d875df356574d31a2ea16c8d809b2dc
 
 **Advanced FinOps Analysis:**
-[![Advanced FinOps Demo](https://cdn.loom.com/sessions/thumbnails/54ecf1a34d6d42ce9ea35c8d160a676f-with-play.gif)](https://www.loom.com/share/54ecf1a34d6d42ce9ea35c8d160a676f)
-
+https://www.loom.com/share/54ecf1a34d6d42ce9ea35c8d160a676f
 ---
 
 ## 🚀 Features
