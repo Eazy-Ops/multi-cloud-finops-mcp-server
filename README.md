@@ -22,6 +22,7 @@ Powered by **LangChain**, **LangGraph**, and **Gemini Pro**, this tool makes Fin
 * 🧠 Natural language queries via Gemini Pro
 * 🧰 Cost breakdowns, FinOps audits, budget status
 * ⚙️ CLI or FastAPI-compatible architecture
+* 🧰 Quick analysis with actionable recommendations for high-cost resources.
 * 🛡️ Credentials never leave your machine (uses local SDK/CLI auth)
 
 ---
