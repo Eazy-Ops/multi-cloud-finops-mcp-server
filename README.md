@@ -169,3 +169,88 @@ Following RDS instances have CPU utilization under 2 percent:
 
 ---
 
+## 🧪 Testing
+
+The project includes comprehensive unit tests for all cloud provider tools. Tests are organized by cloud provider and cover both success and error handling scenarios.
+
+### Running Tests
+
+#### Run All Tests
+```bash
+python run_tests.py
+```
+
+#### Run Tests for Specific Cloud Provider
+
+**AWS Tests:**
+```bash
+python run_tests.py aws
+```
+
+**GCP Tests:**
+```bash
+python run_tests.py gcp
+```
+
+**Azure Tests:**
+```bash
+python run_tests.py azure
+```
+
+#### Run Individual Test Files
+
+**AWS Tools:**
+```bash
+python -m unittest tests.test_aws_tools
+```
+
+**GCP Tools:**
+```bash
+python -m unittest tests.test_gcp_tools
+```
+
+**Azure Tools:**
+```bash
+python -m unittest tests.test_azure_tools
+```
+
+#### Run Specific Test Methods
+```bash
+python -m unittest tests.test_aws_tools.TestAWSTools.test_analyze_aws_disks_success
+```
+
+#### Run test cases for Specific cloud [aws, gcp, azure]
+```bash
+python run_tests.py aws
+```
+
+### Test Coverage
+
+The test suite covers:
+
+* **Success Scenarios**: Testing tool functionality with valid inputs and mocked cloud responses
+* **Error Handling**: Testing graceful handling of API failures, authentication errors, and network issues
+* **Parameter Validation**: Ensuring tools handle various input parameters correctly
+* **Mock Integration**: Using mocked cloud SDK clients to avoid actual API calls during testing
+
+### Test Structure
+
+```
+tests/
+├── test_aws_tools.py      # AWS FinOps tools tests
+├── test_gcp_tools.py      # GCP FinOps tools tests
+├── test_azure_tools.py    # Azure FinOps tools tests
+└── run_tests.py          # Test runner script
+```
+
+### Test Dependencies
+
+Tests use the following mocking strategies:
+- **AWS**: Mocks boto3 session and client methods
+- **GCP**: Mocks Google Cloud client libraries and service methods
+- **Azure**: Mocks Azure SDK clients and management operations
+
+All tests are designed to run without requiring actual cloud credentials or making real API calls.
+
+---
+
