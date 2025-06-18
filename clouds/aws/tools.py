@@ -1280,3 +1280,268 @@ def analyze_aws_static_ips(
             continue
 
     return recommendations
+
+
+@tool
+def analyze_aws_eks_clusters(
+    profile_name: str, regions: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Analyze AWS EKS (Elastic Kubernetes Service) clusters for cost optimization opportunities.
+
+    Args:
+        profile_name: AWS profile name
+        regions: Optional list of regions to analyze. If not provided, analyzes all regions.
+
+    Returns:
+        Dictionary containing EKS cluster optimization recommendations with resource details
+    """
+    session, _, _ = get_boto3_session(profile_name)
+    ec2 = session.client("ec2")
+    eks = session.client("eks")
+    cloudwatch = session.client("cloudwatch")
+
+    # If regions are not provided, retrieve all regions
+    if not regions:
+        regions = [
+            r["RegionName"] for r in ec2.describe_regions(AllRegions=False)["Regions"]
+        ]
+
+    recommendations = {
+        "underutilized_clusters": [],
+        "expensive_node_groups": [],
+        "unused_clusters": [],
+        "iam_optimization": [],
+        "available_clusters": [],
+    }
+
+    for region in regions:
+        try:
+            eks = session.client("eks", region_name=region)
+            ec2 = session.client("ec2", region_name=region)
+            cloudwatch = session.client("cloudwatch", region_name=region)
+
+            # List EKS clusters
+            clusters = eks.list_clusters()
+
+            for cluster_name in clusters["clusters"]:
+                try:
+                    # Get cluster details
+                    cluster_details = eks.describe_cluster(name=cluster_name)
+                    cluster = cluster_details["cluster"]
+
+                    cluster_info = {
+                        "cluster_name": cluster["name"],
+                        "region": region,
+                        "version": cluster["version"],
+                        "status": cluster["status"],
+                        "platform_version": cluster.get("platformVersion", ""),
+                        "endpoint": cluster["endpoint"],
+                        "created_at": cluster["createdAt"].isoformat(),
+                        "role_arn": cluster["roleArn"],
+                        "vpc_config": {
+                            "vpc_id": cluster["resourcesVpcConfig"]["vpcId"],
+                            "subnet_ids": cluster["resourcesVpcConfig"]["subnetIds"],
+                            "security_group_ids": cluster["resourcesVpcConfig"][
+                                "securityGroupIds"
+                            ],
+                        },
+                        "tags": cluster.get("tags", {}),
+                    }
+
+                    recommendations["available_clusters"].append(cluster_info)
+
+                    # Check for unused clusters (no node groups or empty node groups)
+                    try:
+                        node_groups = eks.list_nodegroups(clusterName=cluster_name)
+                        if not node_groups["nodegroups"]:
+                            recommendations["unused_clusters"].append(
+                                {
+                                    "resource_details": cluster_info,
+                                    "recommendation": {
+                                        "action": "Delete unused EKS cluster",
+                                        "reason": "Cluster has no node groups",
+                                        "considerations": "Ensure no workloads depend on this cluster",
+                                    },
+                                }
+                            )
+                        else:
+                            # Analyze node groups
+                            for nodegroup_name in node_groups["nodegroups"]:
+                                try:
+                                    nodegroup_details = eks.describe_nodegroup(
+                                        clusterName=cluster_name,
+                                        nodegroupName=nodegroup_name,
+                                    )
+                                    nodegroup = nodegroup_details["nodegroup"]
+
+                                    nodegroup_info = {
+                                        "nodegroup_name": nodegroup["nodegroupName"],
+                                        "cluster_name": cluster_name,
+                                        "region": region,
+                                        "instance_types": nodegroup["instanceTypes"],
+                                        "desired_size": nodegroup["scalingConfig"][
+                                            "desiredSize"
+                                        ],
+                                        "min_size": nodegroup["scalingConfig"][
+                                            "minSize"
+                                        ],
+                                        "max_size": nodegroup["scalingConfig"][
+                                            "maxSize"
+                                        ],
+                                        "status": nodegroup["status"],
+                                        "created_at": nodegroup[
+                                            "createdAt"
+                                        ].isoformat(),
+                                        "capacity_type": nodegroup.get(
+                                            "capacityType", "ON_DEMAND"
+                                        ),
+                                    }
+
+                                    # Check for expensive instance types
+                                    expensive_types = [
+                                        "m5.large",
+                                        "m5.xlarge",
+                                        "c5.large",
+                                        "c5.xlarge",
+                                        "r5.large",
+                                        "r5.xlarge",
+                                    ]
+                                    for instance_type in nodegroup["instanceTypes"]:
+                                        if instance_type in expensive_types:
+                                            recommendations[
+                                                "expensive_node_groups"
+                                            ].append(
+                                                {
+                                                    "resource_details": nodegroup_info,
+                                                    "recommendation": {
+                                                        "action": "Consider using Spot instances or smaller instance types",
+                                                        "reason": f"Node group uses expensive instance type: {instance_type}",
+                                                        "suggestions": [
+                                                            "Switch to Spot instances for cost savings",
+                                                            "Use smaller instance types if workload allows",
+                                                            "Consider Reserved Instances for predictable workloads",
+                                                            "Implement cluster autoscaler for dynamic scaling",
+                                                        ],
+                                                    },
+                                                }
+                                            )
+
+                                    # Check for underutilized node groups (high desired size but low usage)
+                                    if nodegroup["scalingConfig"]["desiredSize"] > 2:
+                                        # Get CPU utilization metrics for the node group
+                                        end_time = datetime.utcnow()
+                                        start_time = end_time - timedelta(days=7)
+
+                                        try:
+                                            # Get metrics for the node group instances
+                                            cpu_metrics = cloudwatch.get_metric_statistics(
+                                                Namespace="AWS/EC2",
+                                                MetricName="CPUUtilization",
+                                                Dimensions=[
+                                                    {
+                                                        "Name": "AutoScalingGroupName",
+                                                        "Value": nodegroup.get(
+                                                            "nodegroupName", ""
+                                                        ),
+                                                    }
+                                                ],
+                                                StartTime=start_time,
+                                                EndTime=end_time,
+                                                Period=3600,  # 1 hour
+                                                Statistics=["Average"],
+                                            )
+
+                                            avg_cpu = (
+                                                sum(
+                                                    point["Average"]
+                                                    for point in cpu_metrics[
+                                                        "Datapoints"
+                                                    ]
+                                                )
+                                                / len(cpu_metrics["Datapoints"])
+                                                if cpu_metrics["Datapoints"]
+                                                else 0
+                                            )
+
+                                            if (
+                                                avg_cpu < 20
+                                            ):  # Less than 20% CPU utilization
+                                                recommendations[
+                                                    "underutilized_clusters"
+                                                ].append(
+                                                    {
+                                                        "resource_details": nodegroup_info,
+                                                        "recommendation": {
+                                                            "action": "Reduce node group size or use Spot instances",
+                                                            "reason": f"Low CPU utilization ({avg_cpu:.2f}%) with {nodegroup['scalingConfig']['desiredSize']} nodes",
+                                                            "suggestions": [
+                                                                "Reduce desired size to minimum required",
+                                                                "Switch to Spot instances for cost savings",
+                                                                "Implement cluster autoscaler",
+                                                                "Consider using Fargate for serverless workloads",
+                                                            ],
+                                                        },
+                                                    }
+                                                )
+                                        except Exception as metric_e:
+                                            print(
+                                                f"Warning: Could not get metrics for node group {nodegroup_name}: {metric_e}"
+                                            )
+
+                                except Exception as nodegroup_e:
+                                    print(
+                                        f"Warning: Could not analyze node group {nodegroup_name}: {nodegroup_e}"
+                                    )
+                                    continue
+
+                    except Exception as nodegroup_list_e:
+                        print(
+                            f"Warning: Could not list node groups for cluster {cluster_name}: {nodegroup_list_e}"
+                        )
+
+                    # Check IAM roles for excessive permissions
+                    try:
+                        iam = session.client("iam")
+                        role_name = cluster["roleArn"].split("/")[-1]
+                        role_policies = iam.list_attached_role_policies(
+                            RoleName=role_name
+                        )
+
+                        if len(role_policies["AttachedPolicies"]) > 3:
+                            recommendations["iam_optimization"].append(
+                                {
+                                    "resource_details": {
+                                        "cluster_name": cluster_name,
+                                        "role_name": role_name,
+                                    },
+                                    "recommendation": {
+                                        "action": "Review EKS cluster IAM role permissions",
+                                        "reason": f"Cluster role has {len(role_policies['AttachedPolicies'])} attached policies",
+                                        "suggestions": [
+                                            "Apply principle of least privilege",
+                                            "Review and remove unnecessary policies",
+                                            "Use custom policies instead of managed policies",
+                                            "Regularly audit IAM permissions",
+                                        ],
+                                    },
+                                }
+                            )
+                    except Exception as iam_e:
+                        print(
+                            f"Warning: Could not analyze IAM for cluster {cluster_name}: {iam_e}"
+                        )
+
+                except Exception as cluster_e:
+                    print(
+                        f"Warning: Could not analyze cluster {cluster_name}: {cluster_e}"
+                    )
+                    continue
+
+        except Exception as region_e:
+            print(
+                f"Warning: Could not analyze EKS clusters in region {region}: {region_e}"
+            )
+            continue
+
+    return recommendations

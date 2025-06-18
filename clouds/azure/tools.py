@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from azure.mgmt.authorization import AuthorizationManagementClient
 from azure.mgmt.compute import ComputeManagementClient
+from azure.mgmt.containerservice import ContainerServiceClient
 from azure.mgmt.monitor import MonitorManagementClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.storage import StorageManagementClient
@@ -946,6 +947,276 @@ def analyze_azure_static_ips(
                 print(
                     f"Warning: Could not analyze network resources in resource group {resource_group}: {rg_network_e}"
                 )
+                continue
+
+        return recommendations
+
+    except Exception as e:
+        return {"error": str(e), "recommendations": {}}
+
+
+@tool
+def analyze_azure_aks_clusters(
+    subscription_id: str, service_principal_credentials: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Analyze Azure AKS (Azure Kubernetes Service) clusters for cost optimization opportunities.
+
+    Args:
+        subscription_id: Azure subscription ID
+        service_principal_credentials: Optional. Dictionary containing service principal credentials:
+            {
+                'client_id': 'your_client_id',
+                'client_secret': 'your_client_secret',
+                'tenant_id': 'your_tenant_id'
+            }
+
+    Returns:
+        Dictionary containing AKS cluster optimization recommendations with resource details
+    """
+
+    try:
+        credentials = get_azure_credentials(service_principal_credentials)
+
+        aks_client = ContainerServiceClient(credentials, subscription_id)
+        monitor_client = MonitorManagementClient(credentials, subscription_id)
+
+        recommendations = {
+            "underutilized_clusters": [],
+            "expensive_node_pools": [],
+            "unused_clusters": [],
+            "iam_optimization": [],
+            "available_clusters": [],
+        }
+
+        # List all AKS clusters
+        clusters = aks_client.managed_clusters.list()
+
+        for cluster in clusters:
+            try:
+                cluster_info = {
+                    "cluster_name": cluster.name,
+                    "location": cluster.location,
+                    "version": cluster.kubernetes_version,
+                    "status": cluster.provisioning_state,
+                    "fqdn": cluster.fqdn,
+                    "created_at": (
+                        cluster.creation_time.isoformat()
+                        if cluster.creation_time
+                        else None
+                    ),
+                    "resource_group": cluster.id.split("/")[4],
+                    "node_count": (
+                        cluster.agent_pool_profiles[0].count
+                        if cluster.agent_pool_profiles
+                        else 0
+                    ),
+                    "vm_size": (
+                        cluster.agent_pool_profiles[0].vm_size
+                        if cluster.agent_pool_profiles
+                        else None
+                    ),
+                    "tags": cluster.tags,
+                }
+
+                recommendations["available_clusters"].append(cluster_info)
+
+                # Check for unused clusters (no agent pools or empty agent pools)
+                if not cluster.agent_pool_profiles:
+                    recommendations["unused_clusters"].append(
+                        {
+                            "resource_details": cluster_info,
+                            "recommendation": {
+                                "action": "Delete unused AKS cluster",
+                                "reason": "Cluster has no agent pools",
+                                "considerations": "Ensure no workloads depend on this cluster",
+                            },
+                        }
+                    )
+                else:
+                    # Analyze agent pools
+                    for agent_pool in cluster.agent_pool_profiles:
+                        try:
+                            agent_pool_info = {
+                                "pool_name": agent_pool.name,
+                                "cluster_name": cluster.name,
+                                "location": cluster.location,
+                                "vm_size": agent_pool.vm_size,
+                                "count": agent_pool.count,
+                                "min_count": (
+                                    agent_pool.min_count
+                                    if hasattr(agent_pool, "min_count")
+                                    else None
+                                ),
+                                "max_count": (
+                                    agent_pool.max_count
+                                    if hasattr(agent_pool, "max_count")
+                                    else None
+                                ),
+                                "enable_auto_scaling": (
+                                    agent_pool.enable_auto_scaling
+                                    if hasattr(agent_pool, "enable_auto_scaling")
+                                    else False
+                                ),
+                                "mode": agent_pool.mode,
+                                "os_type": agent_pool.os_type,
+                                "spot_max_price": (
+                                    agent_pool.spot_max_price
+                                    if hasattr(agent_pool, "spot_max_price")
+                                    else None
+                                ),
+                            }
+
+                            # Check for expensive VM sizes
+                            expensive_sizes = [
+                                "Standard_D2s_v3",
+                                "Standard_D4s_v3",
+                                "Standard_E2s_v3",
+                                "Standard_E4s_v3",
+                                "Standard_F4s_v2",
+                                "Standard_F8s_v2",
+                            ]
+                            if agent_pool.vm_size in expensive_sizes:
+                                recommendations["expensive_node_pools"].append(
+                                    {
+                                        "resource_details": agent_pool_info,
+                                        "recommendation": {
+                                            "action": "Consider using Spot instances or smaller VM sizes",
+                                            "reason": f"Agent pool uses expensive VM size: {agent_pool.vm_size}",
+                                            "suggestions": [
+                                                "Enable Spot instances for cost savings",
+                                                "Use smaller VM sizes if workload allows",
+                                                "Consider reserved instances for predictable workloads",
+                                                "Implement cluster autoscaler for dynamic scaling",
+                                            ],
+                                        },
+                                    }
+                                )
+
+                            # Check for underutilized agent pools
+                            if agent_pool.count > 2:
+                                # Get CPU utilization metrics for the agent pool
+                                end_time = datetime.utcnow()
+                                start_time = end_time - timedelta(days=7)
+
+                                try:
+                                    # Get metrics for the agent pool
+                                    metrics = monitor_client.metrics.list(
+                                        resource_uri=cluster.id,
+                                        timespan=f"{start_time.isoformat()}/{end_time.isoformat()}",
+                                        interval="P1D",
+                                        metricnames="cpuUsageNanoCores",
+                                        aggregation="Average",
+                                    )
+
+                                    if (
+                                        metrics.value
+                                        and metrics.value[0].timeseries
+                                        and metrics.value[0].timeseries[0].data
+                                    ):
+                                        total_cpu = sum(
+                                            dp.average
+                                            for dp in metrics.value[0]
+                                            .timeseries[0]
+                                            .data
+                                            if dp.average is not None
+                                        )
+                                        avg_cpu = (
+                                            total_cpu
+                                            / len(metrics.value[0].timeseries[0].data)
+                                            if metrics.value[0].timeseries[0].data
+                                            else 0
+                                        )
+
+                                        if (
+                                            avg_cpu < 20
+                                        ):  # Less than 20% CPU utilization
+                                            recommendations[
+                                                "underutilized_clusters"
+                                            ].append(
+                                                {
+                                                    "resource_details": agent_pool_info,
+                                                    "recommendation": {
+                                                        "action": "Reduce agent pool size or enable Spot instances",
+                                                        "reason": f"Low CPU utilization ({avg_cpu:.2f}%) with {agent_pool.count} nodes",
+                                                        "suggestions": [
+                                                            "Reduce node count to minimum required",
+                                                            "Enable Spot instances for cost savings",
+                                                            "Implement cluster autoscaler",
+                                                            "Consider using AKS with virtual nodes for serverless workloads",
+                                                        ],
+                                                    },
+                                                }
+                                            )
+                                except Exception as metric_e:
+                                    print(
+                                        f"Warning: Could not get metrics for agent pool {agent_pool.name}: {metric_e}"
+                                    )
+
+                            # Check if Spot instances are not enabled
+                            if not agent_pool.spot_max_price:
+                                recommendations["expensive_node_pools"].append(
+                                    {
+                                        "resource_details": agent_pool_info,
+                                        "recommendation": {
+                                            "action": "Enable Spot instances for cost savings",
+                                            "reason": "Agent pool is using on-demand instances",
+                                            "suggestions": [
+                                                "Enable Spot instances for non-critical workloads",
+                                                "Use Spot instances for development/test environments",
+                                                "Consider mixed Spot and on-demand for production",
+                                                "Set appropriate spot max price",
+                                            ],
+                                        },
+                                    }
+                                )
+
+                        except Exception as agent_pool_e:
+                            print(
+                                f"Warning: Could not analyze agent pool {agent_pool.name}: {agent_pool_e}"
+                            )
+                            continue
+
+                # Check IAM roles for excessive permissions
+                try:
+                    from azure.mgmt.authorization import \
+                        AuthorizationManagementClient
+
+                    auth_client = AuthorizationManagementClient(
+                        credentials, subscription_id
+                    )
+
+                    role_assignments = auth_client.role_assignments.list()
+                    for assignment in role_assignments:
+                        if (
+                            "Microsoft.ContainerService/managedClusters/write"
+                            in assignment.role_definition_id.lower()
+                        ):
+                            recommendations["iam_optimization"].append(
+                                {
+                                    "resource_details": {
+                                        "cluster_name": cluster.name,
+                                        "role_assignment_id": assignment.id,
+                                    },
+                                    "recommendation": {
+                                        "action": "Review AKS cluster IAM permissions",
+                                        "reason": f"Broad AKS permissions granted to principal {assignment.principal_id}",
+                                        "suggestions": [
+                                            "Apply principle of least privilege",
+                                            "Review and remove unnecessary permissions",
+                                            "Use custom roles instead of built-in roles",
+                                            "Regularly audit IAM permissions",
+                                        ],
+                                    },
+                                }
+                            )
+                except Exception as iam_e:
+                    print(
+                        f"Warning: Could not analyze IAM for cluster {cluster.name}: {iam_e}"
+                    )
+
+            except Exception as cluster_e:
+                print(f"Warning: Could not analyze cluster {cluster.name}: {cluster_e}")
                 continue
 
         return recommendations

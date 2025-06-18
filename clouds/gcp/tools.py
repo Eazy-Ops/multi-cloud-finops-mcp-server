@@ -897,3 +897,291 @@ def analyze_gcp_static_ips(
 
     except Exception as e:
         return {"error": str(e), "recommendations": {}}
+
+
+@tool
+def analyze_gcp_gke_clusters(
+    project_id: str, service_account_key_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Analyze GCP GKE (Google Kubernetes Engine) clusters for cost optimization opportunities.
+
+    Args:
+        project_id: GCP project ID to analyze
+        service_account_key_path: Optional. Path to the service account JSON key file.
+
+    Returns:
+        Dictionary containing GKE cluster optimization recommendations with resource details
+    """
+    from google.cloud import compute_v1, container_v1, monitoring_v3
+
+    try:
+        credentials = get_gcp_credentials(service_account_key_path)
+
+        gke_client = container_v1.ClusterManagerClient(credentials=credentials)
+        monitoring_client = monitoring_v3.MetricServiceClient(credentials=credentials)
+        compute_client = compute_v1.InstancesClient(credentials=credentials)
+
+        recommendations = {
+            "underutilized_clusters": [],
+            "expensive_node_pools": [],
+            "unused_clusters": [],
+            "iam_optimization": [],
+            "available_clusters": [],
+        }
+
+        # Get all locations (regions and zones)
+        locations = ["-"]  # Global
+        try:
+            compute_client = compute_v1.RegionsClient(credentials=credentials)
+            for region in compute_client.list(project=project_id):
+                locations.append(region.name)
+        except Exception as e:
+            print(f"Warning: Could not list regions: {e}")
+
+        for location in locations:
+            try:
+                # List GKE clusters in the location
+                parent = f"projects/{project_id}/locations/{location}"
+                clusters = gke_client.list_clusters(parent=parent)
+
+                for cluster in clusters.clusters:
+                    try:
+                        cluster_info = {
+                            "cluster_name": cluster.name,
+                            "location": location,
+                            "version": cluster.current_master_version,
+                            "status": cluster.status.name,
+                            "endpoint": cluster.endpoint,
+                            "create_time": cluster.create_time,
+                            "network": cluster.network,
+                            "subnetwork": cluster.subnetwork,
+                            "node_pools_count": len(cluster.node_pools),
+                            "initial_node_count": cluster.initial_node_count,
+                            "tags": (
+                                dict(cluster.resource_labels)
+                                if cluster.resource_labels
+                                else {}
+                            ),
+                        }
+
+                        recommendations["available_clusters"].append(cluster_info)
+
+                        # Check for unused clusters (no node pools or empty node pools)
+                        if not cluster.node_pools:
+                            recommendations["unused_clusters"].append(
+                                {
+                                    "resource_details": cluster_info,
+                                    "recommendation": {
+                                        "action": "Delete unused GKE cluster",
+                                        "reason": "Cluster has no node pools",
+                                        "considerations": "Ensure no workloads depend on this cluster",
+                                    },
+                                }
+                            )
+                        else:
+                            # Analyze node pools
+                            for node_pool in cluster.node_pools:
+                                try:
+                                    node_pool_info = {
+                                        "node_pool_name": node_pool.name,
+                                        "cluster_name": cluster.name,
+                                        "location": location,
+                                        "machine_type": (
+                                            node_pool.config.machine_type
+                                            if node_pool.config
+                                            else None
+                                        ),
+                                        "initial_node_count": node_pool.initial_node_count,
+                                        "autoscaling_enabled": (
+                                            node_pool.autoscaling.enabled
+                                            if node_pool.autoscaling
+                                            else False
+                                        ),
+                                        "min_node_count": (
+                                            node_pool.autoscaling.min_node_count
+                                            if node_pool.autoscaling
+                                            else None
+                                        ),
+                                        "max_node_count": (
+                                            node_pool.autoscaling.max_node_count
+                                            if node_pool.autoscaling
+                                            else None
+                                        ),
+                                        "status": node_pool.status.name,
+                                        "version": node_pool.version,
+                                        "spot_instances": (
+                                            node_pool.config.spot
+                                            if node_pool.config
+                                            else False
+                                        ),
+                                    }
+
+                                    # Check for expensive machine types
+                                    expensive_types = [
+                                        "n1-standard-2",
+                                        "n1-standard-4",
+                                        "n2-standard-2",
+                                        "n2-standard-4",
+                                        "e2-standard-2",
+                                        "e2-standard-4",
+                                    ]
+                                    if (
+                                        node_pool.config
+                                        and node_pool.config.machine_type
+                                        in expensive_types
+                                    ):
+                                        recommendations["expensive_node_pools"].append(
+                                            {
+                                                "resource_details": node_pool_info,
+                                                "recommendation": {
+                                                    "action": "Consider using Spot instances or smaller machine types",
+                                                    "reason": f"Node pool uses expensive machine type: {node_pool.config.machine_type}",
+                                                    "suggestions": [
+                                                        "Enable Spot instances for cost savings",
+                                                        "Use smaller machine types if workload allows",
+                                                        "Consider committed use discounts",
+                                                        "Implement cluster autoscaler for dynamic scaling",
+                                                    ],
+                                                },
+                                            }
+                                        )
+
+                                    # Check for underutilized node pools
+                                    if node_pool.initial_node_count > 2 or (
+                                        node_pool.autoscaling
+                                        and node_pool.autoscaling.min_node_count > 2
+                                    ):
+                                        # Get CPU utilization metrics for the node pool
+                                        end_time = datetime.utcnow()
+                                        start_time = end_time - timedelta(days=7)
+
+                                        try:
+                                            interval = monitoring_v3.TimeInterval(
+                                                {
+                                                    "end_time": {
+                                                        "seconds": int(
+                                                            end_time.timestamp()
+                                                        )
+                                                    },
+                                                    "start_time": {
+                                                        "seconds": int(
+                                                            start_time.timestamp()
+                                                        )
+                                                    },
+                                                }
+                                            )
+
+                                            # Get CPU utilization for the node pool
+                                            cpu_usage = get_metric_usage(
+                                                monitoring_client,
+                                                project_id,
+                                                interval,
+                                                "kubernetes.io/node/cpu/core_usage_time",
+                                                cluster.name,
+                                            )
+
+                                            if (
+                                                cpu_usage < 20
+                                            ):  # Less than 20% CPU utilization
+                                                recommendations[
+                                                    "underutilized_clusters"
+                                                ].append(
+                                                    {
+                                                        "resource_details": node_pool_info,
+                                                        "recommendation": {
+                                                            "action": "Reduce node pool size or enable Spot instances",
+                                                            "reason": f"Low CPU utilization ({cpu_usage:.2f}%) with {node_pool.initial_node_count} nodes",
+                                                            "suggestions": [
+                                                                "Reduce initial node count to minimum required",
+                                                                "Enable Spot instances for cost savings",
+                                                                "Implement cluster autoscaler",
+                                                                "Consider using GKE Autopilot for serverless workloads",
+                                                            ],
+                                                        },
+                                                    }
+                                                )
+                                        except Exception as metric_e:
+                                            print(
+                                                f"Warning: Could not get metrics for node pool {node_pool.name}: {metric_e}"
+                                            )
+
+                                    # Check if Spot instances are not enabled
+                                    if node_pool.config and not node_pool.config.spot:
+                                        recommendations["expensive_node_pools"].append(
+                                            {
+                                                "resource_details": node_pool_info,
+                                                "recommendation": {
+                                                    "action": "Enable Spot instances for cost savings",
+                                                    "reason": "Node pool is using on-demand instances",
+                                                    "suggestions": [
+                                                        "Enable Spot instances for non-critical workloads",
+                                                        "Use Spot instances for development/test environments",
+                                                        "Consider mixed Spot and on-demand for production",
+                                                    ],
+                                                },
+                                            }
+                                        )
+
+                                except Exception as node_pool_e:
+                                    print(
+                                        f"Warning: Could not analyze node pool {node_pool.name}: {node_pool_e}"
+                                    )
+                                    continue
+
+                        # Check IAM roles for excessive permissions
+                        try:
+                            from google.cloud import resourcemanager_v3
+
+                            iam_client = resourcemanager_v3.ProjectsClient(
+                                credentials=credentials
+                            )
+                            resource_name = f"projects/{project_id}"
+                            iam_policy = iam_client.get_iam_policy(
+                                request={"resource": resource_name}
+                            )
+
+                            for binding in iam_policy.bindings:
+                                if (
+                                    binding.role == "roles/container.admin"
+                                    and len(binding.members) > 3
+                                ):
+                                    recommendations["iam_optimization"].append(
+                                        {
+                                            "resource_details": {
+                                                "cluster_name": cluster.name,
+                                                "project_id": project_id,
+                                            },
+                                            "recommendation": {
+                                                "action": "Review GKE cluster IAM permissions",
+                                                "reason": f"Project has {len(binding.members)} container admins",
+                                                "suggestions": [
+                                                    "Apply principle of least privilege",
+                                                    "Review and remove unnecessary permissions",
+                                                    "Use custom roles instead of predefined roles",
+                                                    "Regularly audit IAM permissions",
+                                                ],
+                                            },
+                                        }
+                                    )
+                        except Exception as iam_e:
+                            print(
+                                f"Warning: Could not analyze IAM for cluster {cluster.name}: {iam_e}"
+                            )
+
+                    except Exception as cluster_e:
+                        print(
+                            f"Warning: Could not analyze cluster {cluster.name}: {cluster_e}"
+                        )
+                        continue
+
+            except Exception as location_e:
+                print(
+                    f"Warning: Could not analyze GKE clusters in location {location}: {location_e}"
+                )
+                continue
+
+        return recommendations
+
+    except Exception as e:
+        return {"error": str(e), "recommendations": {}}
