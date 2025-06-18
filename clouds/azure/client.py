@@ -1,16 +1,14 @@
-from azure.identity import (
-    DefaultAzureCredential,
-    ClientSecretCredential
-)
-from azure.mgmt.subscription import SubscriptionClient
-from azure.mgmt.resource import ResourceManagementClient
 from typing import Optional, Tuple
+
+from azure.identity import ClientSecretCredential, DefaultAzureCredential
+from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.subscription import SubscriptionClient
 
 
 def get_azure_credentials(
     tenant_id: Optional[str] = None,
     client_id: Optional[str] = None,
-    client_secret: Optional[str] = None
+    client_secret: Optional[str] = None,
 ):
     """
     Returns an Azure credential. Supports:
@@ -39,7 +37,9 @@ def get_subscription_id(credential=None) -> Tuple[Optional[str], Optional[str]]:
         return None, str(e)
 
 
-def get_resource_client(subscription_id: str, credential=None) -> ResourceManagementClient:
+def get_resource_client(
+    subscription_id: str, credential=None
+) -> ResourceManagementClient:
     if credential is None:
         credential = get_azure_credentials()
     return ResourceManagementClient(credential, subscription_id)

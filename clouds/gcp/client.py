@@ -1,11 +1,11 @@
 # clouds/gcp/client.py
 
-from google.auth import default
-from google.oauth2 import service_account
-from google.cloud import billing_v1
-from google.auth.credentials import Credentials
 from typing import Optional
-import os
+
+from google.auth import default
+from google.auth.credentials import Credentials
+from google.cloud import billing_v1
+from google.oauth2 import service_account
 
 
 def get_gcp_credentials(service_account_key_path: Optional[str] = None) -> Credentials:
@@ -27,7 +27,9 @@ def get_gcp_credentials(service_account_key_path: Optional[str] = None) -> Crede
     return credentials
 
 
-def get_billing_client(service_account_key_path: Optional[str] = None) -> billing_v1.CloudBillingClient:
+def get_billing_client(
+    service_account_key_path: Optional[str] = None,
+) -> billing_v1.CloudBillingClient:
     """
     Returns a GCP Cloud Billing client using resolved credentials.
     """

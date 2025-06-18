@@ -1,16 +1,15 @@
-from datetime import datetime
-from typing import Optional, Dict, Any, List
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
+
+from google.cloud import container_v1, logging_v2, resourcemanager_v3
+from googleapiclient.discovery import build
 from langchain.tools import tool
-from google.cloud import resourcemanager_v3, container_v1
 
 from clouds.gcp.client import get_gcp_credentials
-from clouds.gcp.utils import (
-    get_stopped_vms,
-    get_unattached_disks,
-    get_budget_data,
-    get_gcp_cost_breakdown
-)
-from googleapiclient.discovery import build
+from clouds.gcp.utils import (get_budget_data, get_gcp_cost_breakdown,
+                              get_metric_usage, get_stopped_vms,
+                              get_unattached_disks)
+
 
 @tool
 def get_gcp_cost(
@@ -20,7 +19,6 @@ def get_gcp_cost(
     start_date_iso: Optional[str] = None,
     end_date_iso: Optional[str] = None,
     region_wise: bool = False,
-
 ) -> Dict[str, Any]:
     """
     Retrieve GCP cost breakdown for a specific project over a defined time period.
@@ -57,18 +55,14 @@ def get_gcp_cost(
         region_wise=region_wise,
     )
 
-    return {
-        "project_id": project_id,
-        **cost_summary,
-        "error": err
-    }
+    return {"project_id": project_id, **cost_summary, "error": err}
 
 
 @tool
 def run_gcp_finops_audit(
     project_id: str,
     billing_account_id: str,
-    service_account_key_path: Optional[str] = None
+    service_account_key_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run a GCP FinOps audit for a given project and billing account.
@@ -109,7 +103,7 @@ def run_gcp_finops_audit(
             "vms": vms_err,
             "disks": disk_err,
             "budgets": budgets_err,
-        }
+        },
     }
 
 
@@ -135,11 +129,13 @@ def list_gcp_projects(service_account_key_path: Optional[str] = None) -> Dict[st
         projects = []
 
         for project in client.search_projects(request=request):
-            projects.append({
-                "project_id": project.project_id,
-                "name": project.display_name,
-                "state": resourcemanager_v3.Project.State(project.state).name,
-            })
+            projects.append(
+                {
+                    "project_id": project.project_id,
+                    "name": project.display_name,
+                    "state": resourcemanager_v3.Project.State(project.state).name,
+                }
+            )
 
         return {"projects": projects, "error": None}
 
@@ -147,9 +143,10 @@ def list_gcp_projects(service_account_key_path: Optional[str] = None) -> Dict[st
         return {"projects": [], "error": str(e)}
 
 
-
 @tool
-def list_gke_clusters(project_id: str, location: str = "-", service_account_key_path: Optional[str] = None) -> Dict[str, Any]:
+def list_gke_clusters(
+    project_id: str, location: str = "-", service_account_key_path: Optional[str] = None
+) -> Dict[str, Any]:
     """
     List all GKE clusters in the specified project and location.
 
@@ -181,7 +178,9 @@ def list_gke_clusters(project_id: str, location: str = "-", service_account_key_
 
 
 @tool
-def list_sql_instances(project_id: str, service_account_key_path: Optional[str] = None) -> Dict[str, Any]:
+def list_sql_instances(
+    project_id: str, service_account_key_path: Optional[str] = None
+) -> Dict[str, Any]:
     """
     List all Cloud SQL instances for the given GCP project.
 
@@ -203,12 +202,14 @@ def list_sql_instances(project_id: str, service_account_key_path: Optional[str] 
 
         instances = []
         for instance in response.get("items", []):
-            instances.append({
-                "name": instance.get("name"),
-                "region": instance.get("region"),
-                "databaseVersion": instance.get("databaseVersion"),
-                "state": instance.get("state"),
-            })
+            instances.append(
+                {
+                    "name": instance.get("name"),
+                    "region": instance.get("region"),
+                    "databaseVersion": instance.get("databaseVersion"),
+                    "state": instance.get("state"),
+                }
+            )
 
         return {"instances": instances, "error": None}
 
@@ -216,14 +217,12 @@ def list_sql_instances(project_id: str, service_account_key_path: Optional[str] 
         return {"instances": [], "error": str(e)}
 
 
-from google.cloud import logging_v2
-
 @tool
 def get_gcp_logs(
     project_id: str,
     filter_str: Optional[str] = None,
     page_size: int = 20,
-    service_account_key_path: Optional[str] = None
+    service_account_key_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Retrieve recent log entries from Cloud Logging for the given project.
@@ -246,14 +245,347 @@ def get_gcp_logs(
 
         logs = []
         for entry in entries:
-            logs.append({
-                "timestamp": entry.timestamp.isoformat() if entry.timestamp else None,
-                "logName": entry.log_name,
-                "payload": entry.payload,
-                "severity": entry.severity.name if entry.severity else None,
-            })
+            logs.append(
+                {
+                    "timestamp": (
+                        entry.timestamp.isoformat() if entry.timestamp else None
+                    ),
+                    "logName": entry.log_name,
+                    "payload": entry.payload,
+                    "severity": entry.severity.name if entry.severity else None,
+                }
+            )
 
         return {"entries": logs, "error": None}
 
     except Exception as e:
         return {"entries": [], "error": str(e)}
+
+
+@tool
+def analyze_gcp_storage(
+    project_id: str, service_account_key_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Analyze GCP Cloud Storage buckets for cost optimization opportunities.
+
+    Args:
+        project_id: GCP project ID to analyze
+        service_account_key_path: Optional. Path to the service account JSON key file.
+
+    Returns:
+        Dictionary containing Cloud Storage optimization recommendations with resource details
+    """
+    from google.cloud import monitoring_v3, storage
+
+    try:
+        credentials = get_gcp_credentials(service_account_key_path)
+
+        storage_client = storage.Client(project=project_id, credentials=credentials)
+        monitoring_client = monitoring_v3.MetricServiceClient(credentials=credentials)
+
+        recommendations = {
+            "lifecycle_policy_recommendations": [],
+            "storage_class_optimization": [],
+            "unused_buckets": [],
+            "large_objects": [],
+            "versioning_optimization": [],
+            "iam_optimization": [],
+            "available_buckets": [],
+        }
+
+        buckets = storage_client.list_buckets()
+
+        for bucket in buckets:
+            try:
+                iam_policy = bucket.get_iam_policy()
+                iam_bindings = iam_policy.bindings if iam_policy else []
+                lifecycle_rules = (
+                    list(bucket.lifecycle_rules) if bucket.lifecycle_rules else []
+                )
+                bucket_details = {
+                    "bucket_name": bucket.name,
+                    "project_id": project_id,
+                    "location": bucket.location,
+                    "storage_class": bucket.storage_class,
+                    "created": bucket.time_created.isoformat(),
+                    "versioning_enabled": bucket.versioning_enabled,
+                    "labels": bucket.labels,
+                    "lifecycle_rules": len(lifecycle_rules),
+                    "iam_members": len(iam_bindings),
+                }
+
+                # Add to available buckets
+                recommendations["available_buckets"].append(bucket_details)
+
+                # Get bucket metrics for the last 30 days
+                interval = monitoring_v3.TimeInterval(
+                    {
+                        "end_time": {"seconds": int(datetime.now().timestamp())},
+                        "start_time": {
+                            "seconds": int(
+                                (datetime.now() - timedelta(days=30)).timestamp()
+                            )
+                        },
+                    }
+                )
+
+                storage_metric = monitoring_client.list_time_series(
+                    request={
+                        "name": f"projects/{project_id}",
+                        "filter": f'metric.type = "storage.googleapis.com/storage/total_bytes" AND resource.labels.bucket_name = "{bucket.name}"',
+                        "interval": interval,
+                        "view": monitoring_v3.ListTimeSeriesRequest.TimeSeriesView.FULL,
+                    }
+                )
+
+                total_bytes = sum(
+                    point.value.double_value
+                    for series in storage_metric
+                    for point in series.points
+                )
+
+                bucket_details["total_bytes"] = total_bytes
+
+                if total_bytes == 0:
+                    recommendations["unused_buckets"].append(
+                        {
+                            "resource_details": bucket_details,
+                            "recommendation": {
+                                "action": "Consider deletion",
+                                "reason": "No data stored in the last 30 days",
+                                "considerations": "Ensure no critical data before deletion",
+                            },
+                        }
+                    )
+
+                if not bucket.lifecycle_rules:
+                    recommendations["lifecycle_policy_recommendations"].append(
+                        {
+                            "resource_details": bucket_details,
+                            "recommendation": {
+                                "action": "Add lifecycle rules",
+                                "reason": "No lifecycle rules configured",
+                                "suggested_rules": [
+                                    "Move objects to Nearline after 30 days",
+                                    "Move to Coldline after 90 days",
+                                    "Delete incomplete multipart uploads after 7 days",
+                                ],
+                            },
+                        }
+                    )
+
+                if bucket.storage_class == "STANDARD" and total_bytes > 1_000_000_000:
+                    recommendations["storage_class_optimization"].append(
+                        {
+                            "resource_details": bucket_details,
+                            "recommendation": {
+                                "action": "Consider storage class change",
+                                "reason": f"Large bucket ({total_bytes / 1_000_000_000:.2f} GB) using Standard storage",
+                                "suggestions": [
+                                    "Consider Nearline for infrequently accessed data",
+                                    "Consider Coldline for archival data",
+                                    "Consider Archive for long-term archival data",
+                                ],
+                            },
+                        }
+                    )
+
+                if bucket.versioning_enabled:
+                    versioned_objects = list(bucket.list_blobs(versions=True))
+                    if len(versioned_objects) > 1000:
+                        recommendations["versioning_optimization"].append(
+                            {
+                                "resource_details": bucket_details,
+                                "recommendation": {
+                                    "action": "Optimize versioning",
+                                    "reason": f"Large number of versioned objects ({len(versioned_objects)})",
+                                    "suggestions": [
+                                        "Implement lifecycle rules for versioned objects",
+                                        "Review versioning necessity for all objects",
+                                        "Use versioning only for critical data",
+                                    ],
+                                },
+                            }
+                        )
+
+                for binding in iam_policy.bindings:
+                    if (
+                        binding["role"] == "roles/storage.admin"
+                        and len(binding["members"]) > 3
+                    ):
+                        recommendations["iam_optimization"].append(
+                            {
+                                "resource_details": bucket_details,
+                                "recommendation": {
+                                    "action": "Review IAM permissions",
+                                    "reason": f'Too many storage admins ({len(binding["members"])})',
+                                    "suggestions": [
+                                        "Review admin access necessity",
+                                        "Consider using more specific roles",
+                                        "Implement least privilege principle",
+                                    ],
+                                },
+                            }
+                        )
+
+            except Exception as inner_e:
+                print(f"Warning: Could not analyze bucket {bucket.name}: {inner_e}")
+                continue
+
+        return recommendations
+
+    except Exception as e:
+        return {"error": str(e), "recommendations": {}}
+
+
+@tool
+def analyze_gcp_disks(
+    project_id: str, service_account_key_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Analyze GCP Compute Engine disks for cost optimization opportunities.
+
+    Args:
+        project_id: GCP project ID to analyze
+        service_account_key_path: Optional. Path to the service account JSON key file.
+
+    Returns:
+        Dictionary containing Compute Engine disk optimization recommendations with resource details.
+    """
+    from google.cloud import compute_v1, monitoring_v3
+
+    try:
+        credentials = get_gcp_credentials(service_account_key_path)
+
+        disk_client = compute_v1.DisksClient(credentials=credentials)
+        zone_client = compute_v1.ZonesClient(credentials=credentials)
+        monitoring_client = monitoring_v3.MetricServiceClient(credentials=credentials)
+
+        recommendations = {
+            "unattached_disks": [],
+            "idle_disks": [],
+            "expensive_disk_types": [],
+            "iam_optimization": [],
+            "available_disks": [],
+        }
+        zones = [zone.name for zone in zone_client.list(project=project_id)]
+
+        for zone in zones:
+            for disk in disk_client.list(project=project_id, zone=zone):
+                try:
+                    disk_details = {
+                        "disk_name": disk.name,
+                        "zone": zone,
+                        "type": disk.type.split("/")[-1],
+                        "size_gb": disk.size_gb,
+                        "users": disk.users,
+                        "labels": disk.labels,
+                        "creation_timestamp": disk.creation_timestamp,
+                    }
+
+                    recommendations["available_disks"].append(disk_details)
+
+                    # Unattached disk
+                    if not disk.users:
+                        recommendations["unattached_disks"].append(
+                            {
+                                "resource_details": disk_details,
+                                "recommendation": {
+                                    "action": "Delete or snapshot unattached disk",
+                                    "reason": "Disk is not attached to any instance",
+                                    "considerations": "Ensure disk is not needed before deletion",
+                                },
+                            }
+                        )
+
+                    # Expensive disk type
+                    if "pd-ssd" in disk.type:
+                        recommendations["expensive_disk_types"].append(
+                            {
+                                "resource_details": disk_details,
+                                "recommendation": {
+                                    "action": "Consider using pd-standard",
+                                    "reason": "Disk is using expensive SSD type",
+                                    "suggestions": [
+                                        "Switch to pd-balanced or pd-standard for general workloads",
+                                        "Use SSD only for high IOPS needs",
+                                    ],
+                                },
+                            }
+                        )
+
+                    # Disk usage metrics (read/write ops)
+                    interval = monitoring_v3.TimeInterval(
+                        {
+                            "end_time": {"seconds": int(datetime.now().timestamp())},
+                            "start_time": {
+                                "seconds": int(
+                                    (datetime.now() - timedelta(days=30)).timestamp()
+                                )
+                            },
+                        }
+                    )
+                    read_bytes = get_metric_usage(
+                        monitoring_client,
+                        project_id,
+                        interval,
+                        "compute.googleapis.com/disk/read_bytes_count",
+                        disk.id,
+                    )
+
+                    write_bytes = get_metric_usage(
+                        monitoring_client,
+                        project_id,
+                        interval,
+                        "compute.googleapis.com/disk/write_bytes_count",
+                        disk.id,
+                    )
+
+                    total_activity = read_bytes + write_bytes
+
+                    if total_activity == 0:
+                        recommendations["idle_disks"].append(
+                            {
+                                "resource_details": disk_details,
+                                "recommendation": {
+                                    "action": "Review and delete if unnecessary",
+                                    "reason": "No disk activity in last 30 days",
+                                    "suggestions": [
+                                        "Snapshot and delete if no longer needed",
+                                        "Move to cheaper storage if archival is required",
+                                    ],
+                                },
+                            }
+                        )
+
+                except Exception as disk_e:
+                    print(f"Warning: Could not analyze disk {disk.name}: {disk_e}")
+                    continue
+
+        from google.cloud import resourcemanager_v3
+
+        iam_client = resourcemanager_v3.ProjectsClient(credentials=credentials)
+        resource_name = f"projects/{project_id}"
+        iam_policy = iam_client.get_iam_policy(request={"resource": resource_name})
+
+        for binding in iam_policy.bindings:
+            if binding.role == "roles/compute.admin" and len(binding.members) > 5:
+                recommendations["iam_optimization"].append(
+                    {
+                        "resource_details": {"project_id": project_id},
+                        "recommendation": {
+                            "action": "Review compute.admin IAM role",
+                            "reason": f"Too many members with compute.admin ({len(binding.members)})",
+                            "suggestions": [
+                                "Limit admin roles to only required users",
+                                "Apply principle of least privilege",
+                            ],
+                        },
+                    }
+                )
+
+        return recommendations
+
+    except Exception as e:
+        return {"error": str(e), "recommendations": {}}

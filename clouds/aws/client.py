@@ -1,9 +1,12 @@
+from typing import Optional, Tuple
+
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-from typing import Tuple, Optional
 
 
-def get_boto3_session(profile_name: Optional[str] = None) -> Tuple[Optional[boto3.Session], Optional[str], Optional[str]]:
+def get_boto3_session(
+    profile_name: Optional[str] = None,
+) -> Tuple[Optional[boto3.Session], Optional[str], Optional[str]]:
     """
     Create a boto3 session using the specified profile or default credentials.
     Returns:

@@ -1,4 +1,3 @@
-from fastapi import FastAPI
 from mcp.server.fastmcp import run
 
 # app = FastAPI()

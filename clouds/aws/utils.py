@@ -1,54 +1,69 @@
+from typing import Any, Dict, List, Optional, Tuple
+
 import boto3
-from typing import List, Tuple, Dict, Any, Optional
 
 
-def get_stopped_ec2(session: boto3.Session, regions: List[str]) -> Tuple[List[Dict[str, Any]], List[str]]:
+def get_stopped_ec2(
+    session: boto3.Session, regions: List[str]
+) -> Tuple[List[Dict[str, Any]], List[str]]:
     results = []
     errors = []
 
     for region in regions:
         try:
             ec2 = session.client("ec2", region_name=region)
-            response = ec2.describe_instances(Filters=[{"Name": "instance-state-name", "Values": ["stopped"]}])
+            response = ec2.describe_instances(
+                Filters=[{"Name": "instance-state-name", "Values": ["stopped"]}]
+            )
 
             for reservation in response.get("Reservations", []):
                 for instance in reservation.get("Instances", []):
-                    results.append({
-                        "InstanceId": instance.get("InstanceId"),
-                        "InstanceType": instance.get("InstanceType"),
-                        "Region": region,
-                        "LaunchTime": str(instance.get("LaunchTime")),
-                        "Tags": instance.get("Tags", [])
-                    })
+                    results.append(
+                        {
+                            "InstanceId": instance.get("InstanceId"),
+                            "InstanceType": instance.get("InstanceType"),
+                            "Region": region,
+                            "LaunchTime": str(instance.get("LaunchTime")),
+                            "Tags": instance.get("Tags", []),
+                        }
+                    )
         except Exception as e:
             errors.append(f"{region}: {str(e)}")
 
     return results, errors
 
 
-def get_unattached_ebs_volumes(session: boto3.Session, regions: List[str]) -> Tuple[List[Dict[str, Any]], List[str]]:
+def get_unattached_ebs_volumes(
+    session: boto3.Session, regions: List[str]
+) -> Tuple[List[Dict[str, Any]], List[str]]:
     results = []
     errors = []
 
     for region in regions:
         try:
             ec2 = session.client("ec2", region_name=region)
-            response = ec2.describe_volumes(Filters=[{"Name": "status", "Values": ["available"]}])
+            response = ec2.describe_volumes(
+                Filters=[{"Name": "status", "Values": ["available"]}]
+            )
 
             for volume in response.get("Volumes", []):
-                results.append({
-                    "VolumeId": volume.get("VolumeId"),
-                    "Size": volume.get("Size"),
-                    "Region": region,
-                    "Tags": volume.get("Tags", [])
-                })
+                results.append(
+                    {
+                        "VolumeId": volume.get("VolumeId"),
+                        "Size": volume.get("Size"),
+                        "Region": region,
+                        "Tags": volume.get("Tags", []),
+                    }
+                )
         except Exception as e:
             errors.append(f"{region}: {str(e)}")
 
     return results, errors
 
 
-def get_unassociated_eips(session: boto3.Session, regions: List[str]) -> Tuple[List[Dict[str, Any]], List[str]]:
+def get_unassociated_eips(
+    session: boto3.Session, regions: List[str]
+) -> Tuple[List[Dict[str, Any]], List[str]]:
     results = []
     errors = []
 
@@ -59,40 +74,45 @@ def get_unassociated_eips(session: boto3.Session, regions: List[str]) -> Tuple[L
 
             for address in response.get("Addresses", []):
                 if "InstanceId" not in address:
-                    results.append({
-                        "PublicIp": address.get("PublicIp"),
-                        "AllocationId": address.get("AllocationId"),
-                        "Region": region,
-                    })
+                    results.append(
+                        {
+                            "PublicIp": address.get("PublicIp"),
+                            "AllocationId": address.get("AllocationId"),
+                            "Region": region,
+                        }
+                    )
         except Exception as e:
             errors.append(f"{region}: {str(e)}")
 
     return results, errors
 
 
-def get_budget_data(session: boto3.Session, account_id: str) -> Tuple[Dict[str, Any], str]:
+def get_budget_data(
+    session: boto3.Session, account_id: str
+) -> Tuple[Dict[str, Any], str]:
     try:
         client = session.client("budgets")
         response = client.describe_budgets(AccountId=account_id)
 
         budget_status = []
         for budget in response.get("Budgets", []):
-            budget_status.append({
-                "Name": budget["BudgetName"],
-                "Limit": budget.get("BudgetLimit", {}).get("Amount"),
-                "Unit": budget.get("BudgetLimit", {}).get("Unit"),
-                "TimeUnit": budget.get("TimeUnit")
-            })
+            budget_status.append(
+                {
+                    "Name": budget["BudgetName"],
+                    "Limit": budget.get("BudgetLimit", {}).get("Amount"),
+                    "Unit": budget.get("BudgetLimit", {}).get("Unit"),
+                    "TimeUnit": budget.get("TimeUnit"),
+                }
+            )
 
         return budget_status, ""
     except Exception as e:
         return [], str(e)
 
 
-
 def cost_filters(
-        tags: Optional[List[str]] = None,
-        dimensions: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+    dimensions: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Constructs filter parameters for AWS Cost Explorer API call based on provided tags and dimensions.

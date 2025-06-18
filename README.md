@@ -143,6 +143,18 @@ Then ask questions in Claude Desktop, Amazon Q, or any MCP-compatible client:
 }
 ```
 
+### 💸 AWS rds instances having cpu utilization under 2 percent
+```bash
+
+
+Following RDS instances have CPU utilization under 2 percent:
+
+* resource_name1 (1.73%)
+* resource_name2 (1.2%)
+
+```
+
+
 ### ☁️ Break down GCP spend in last 7 days project id dev-ezo
 
 ```json
