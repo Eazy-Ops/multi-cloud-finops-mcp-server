@@ -23,6 +23,8 @@ https://www.loom.com/share/0d875df356574d31a2ea16c8d809b2dc
 
 **Advanced FinOps Analysis:**
 https://www.loom.com/share/54ecf1a34d6d42ce9ea35c8d160a676f
+
+![Multi-Cloud MCP Demo](multi_cloud_mcp.gif)
 ---
 
 ## 🚀 Features
