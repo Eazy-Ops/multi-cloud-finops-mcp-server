@@ -133,3 +133,7 @@ def run():
             asyncio.run(handle_input(user_input))
         except Exception as e:
             print("Error: due to this exception", e)
+
+
+if __name__ == "__main__":
+    run()
