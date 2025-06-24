@@ -59,7 +59,7 @@ cd multi-cloud-finops-mcp-server
 # Install dependencies
 poetry install
 
-# activate virtualenv created by potery according to your OS
+# activate virtualenv created by poetry
 poetry shell
 ```
 
