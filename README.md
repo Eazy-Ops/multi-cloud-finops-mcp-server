@@ -267,5 +267,17 @@ Tests use the following mocking strategies:
 
 All tests are designed to run without requiring actual cloud credentials or making real API calls.
 
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+We welcome contributions from the community! Please see our [contributing guidelines](CONTRIBUTING.md) for more information.
+
+## Code of Conduct
+
+We have a [code of conduct](CODE_OF_CONDUCT.md) that we expect all contributors to follow. Please read it before contributing.
+
 ---
 
