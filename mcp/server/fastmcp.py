@@ -1,6 +1,4 @@
 import asyncio
-import os
-import sys
 from typing import TypedDict
 
 import nest_asyncio
@@ -12,6 +10,7 @@ from prompt_toolkit import prompt
 from prompt_toolkit.history import InMemoryHistory
 from rich.align import Align
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -20,22 +19,26 @@ from clouds.aws.tools import (analyze_aws_disks, analyze_aws_eks_clusters,
                               analyze_aws_network, analyze_aws_snapshots,
                               analyze_aws_static_ips,
                               analyze_cloudwatch_logs_cost,
-                              analyze_ec2_rightsizing, analyze_rds_instances,
-                              analyze_s3_optimization)
+                              analyze_ec2_rightsizing,
+                              analyze_lambda_optimization,
+                              analyze_rds_instances, analyze_s3_optimization)
 from clouds.aws.tools import get_cost as get_aws_cost
 from clouds.aws.tools import list_aws_profiles
 from clouds.aws.tools import run_finops_audit as run_aws_finops_audit
+from clouds.aws.tools import save_report, save_report_csv
 from clouds.azure.tools import (analyze_azure_aks_clusters,
                                 analyze_azure_disks, analyze_azure_instances,
                                 analyze_azure_network, analyze_azure_snapshots,
+                                analyze_azure_sql_databases,
                                 analyze_azure_static_ips,
                                 analyze_azure_storage, get_azure_cost,
                                 run_azure_finops_audit)
-from clouds.gcp.tools import (analyze_gcp_disks, analyze_gcp_gke_clusters,
-                              analyze_gcp_snapshots, analyze_gcp_static_ips,
-                              analyze_gcp_storage, get_gcp_cost, get_gcp_logs,
-                              list_gcp_projects, list_gke_clusters,
-                              list_sql_instances, run_gcp_finops_audit)
+from clouds.gcp.tools import (analyze_gcp_bigquery, analyze_gcp_disks,
+                              analyze_gcp_gke_clusters, analyze_gcp_snapshots,
+                              analyze_gcp_static_ips, analyze_gcp_storage,
+                              get_gcp_cost, get_gcp_logs, list_gcp_projects,
+                              list_gke_clusters, list_sql_instances,
+                              run_gcp_finops_audit)
 from config import GOOGLE_API_KEY
 
 console = Console()
@@ -95,6 +98,11 @@ tools = [
     analyze_azure_snapshots,
     analyze_azure_static_ips,
     analyze_azure_aks_clusters,
+    analyze_gcp_bigquery,
+    analyze_lambda_optimization,
+    analyze_azure_sql_databases,
+    save_report,
+    save_report_csv,
 ]
 
 agent_prompt = ChatPromptTemplate.from_messages(
@@ -105,6 +113,8 @@ agent_prompt = ChatPromptTemplate.from_messages(
             "- Get cost breakdowns for AWS, GCP, Azure\n"
             "- Run FinOps audits for cost-saving insights\n"
             "- List Projects, Profiles, Subscriptions for AWS, GCP, Azure\n"
+            "- Always regenerate report data in a clean, tabular format that is easily mappable to CSV or PDF.\n"
+            "- Always generate reports data in a tabular clear, professional format suitable for C-level executives\n"
             "Decide which cloud's tool to invoke based on user input.",
         ),
         MessagesPlaceholder(variable_name="messages"),
@@ -132,9 +142,6 @@ def extract_cloud_hint(user_input: str) -> str:
     elif "azure" in user_input or "subscription" in user_input:
         return "azure"
     return ""
-
-
-from rich.markdown import Markdown
 
 
 def render_pretty_output(content: str):
@@ -198,6 +205,28 @@ def run():
             border_style="green",
         )
     )
+    examples = [
+        "[cyan]•[/cyan] What is my AWS cost breakdown for the last 7 days profile prfofile_name",
+        "[cyan]•[/cyan] Run a GCP FinOps audit for project project_id for billing account name_of_dataset",
+        "[cyan]•[/cyan] Quick Network analysis for Azure subscription subscription_id",
+        "[cyan]•[/cyan] Show underutilized EC2 instances in us-west-1.",
+        "[cyan]•[/cyan] Find idle disks in GCP for project project_id",
+        "[cyan]•[/cyan] Analyze my S3 buckets for optimization.",
+    ]
+
+    table = Table.grid(padding=1)
+    table.add_column(justify="left")
+    for example in examples:
+        table.add_row(Text.from_markup(example))
+
+    console.print(
+        Panel(
+            Align.left(table),
+            title="[bold magenta]Example Prompts[/bold magenta]",
+            border_style="magenta",
+        )
+    )
+
     while True:
         try:
             user_input = prompt(

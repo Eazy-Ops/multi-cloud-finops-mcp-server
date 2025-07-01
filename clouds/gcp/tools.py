@@ -432,7 +432,9 @@ def analyze_gcp_storage(
                         )
 
             except Exception as inner_e:
-                logger.warning(f"Warning: Could not analyze bucket {bucket.name}: {inner_e}")
+                logger.warning(
+                    f"Warning: Could not analyze bucket {bucket.name}: {inner_e}"
+                )
                 continue
 
         return recommendations
@@ -562,7 +564,9 @@ def analyze_gcp_disks(
                         )
 
                 except Exception as disk_e:
-                    logger.warning(f"Warning: Could not analyze disk {disk.name}: {disk_e}")
+                    logger.warning(
+                        f"Warning: Could not analyze disk {disk.name}: {disk_e}"
+                    )
                     continue
 
         from google.cloud import resourcemanager_v3
@@ -851,7 +855,9 @@ def analyze_gcp_static_ips(
                         continue
 
             except Exception as region_e:
-                logger.warning(f"Warning: Could not analyze region {region}: {region_e}")
+                logger.warning(
+                    f"Warning: Could not analyze region {region}: {region_e}"
+                )
                 continue
 
         # Analyze global static IPs
@@ -1104,8 +1110,11 @@ def analyze_gcp_gke_clusters(
                                                     }
                                                 )
                                         except Exception as metric_e:
-                                            logger.warning("Could not get metrics for node pool %s: %s", node_pool.name,
-                                                           metric_e)
+                                            logger.warning(
+                                                "Could not get metrics for node pool %s: %s",
+                                                node_pool.name,
+                                                metric_e,
+                                            )
 
                                     # Check if Spot instances are not enabled
                                     if node_pool.config and not node_pool.config.spot:
@@ -1125,7 +1134,11 @@ def analyze_gcp_gke_clusters(
                                         )
 
                                 except Exception as node_pool_e:
-                                    logger.warning("Could not analyze node pool %s: %s", node_pool.name, node_pool_e)
+                                    logger.warning(
+                                        "Could not analyze node pool %s: %s",
+                                        node_pool.name,
+                                        node_pool_e,
+                                    )
                                     continue
 
                         # Check IAM roles for excessive permissions
@@ -1164,15 +1177,143 @@ def analyze_gcp_gke_clusters(
                                         }
                                     )
                         except Exception as iam_e:
-                            logger.warning("Could not analyze IAM for cluster %s: %s", cluster.name, iam_e)
+                            logger.warning(
+                                "Could not analyze IAM for cluster %s: %s",
+                                cluster.name,
+                                iam_e,
+                            )
 
                     except Exception as cluster_e:
-                        logger.warning("Could not analyze cluster %s: %s", cluster.name, cluster_e)
+                        logger.warning(
+                            "Could not analyze cluster %s: %s", cluster.name, cluster_e
+                        )
                         continue
 
             except Exception as location_e:
-                logger.warning("Could not analyze GKE clusters in location %s: %s", location, location_e)
+                logger.warning(
+                    "Could not analyze GKE clusters in location %s: %s",
+                    location,
+                    location_e,
+                )
                 continue
+
+        return recommendations
+
+    except Exception as e:
+        return {"error": str(e), "recommendations": {}}
+
+
+@tool
+def analyze_gcp_bigquery(
+    project_id: str, service_account_key_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Analyze GCP BigQuery datasets and tables for cost optimization opportunities.
+
+    Args:
+        project_id: GCP project ID to analyze
+        service_account_key_path: Optional. Path to the service account JSON key file.
+
+    Returns:
+        Dictionary containing BigQuery optimization recommendations with resource details.
+    """
+    from datetime import datetime, timedelta
+
+    from google.cloud import bigquery
+
+    try:
+        credentials = get_gcp_credentials(service_account_key_path)
+        bq_client = bigquery.Client(project=project_id, credentials=credentials)
+
+        recommendations = {
+            "large_tables": [],
+            "unused_tables": [],
+            "long_retention_tables": [],
+            "available_tables": [],
+        }
+
+        # Analyze all datasets and tables
+        for dataset in bq_client.list_datasets():
+            dataset_ref = dataset.reference
+            for table in bq_client.list_tables(dataset_ref):
+                try:
+                    table_ref = table.reference
+                    table_obj = bq_client.get_table(table_ref)
+                    table_details = {
+                        "dataset_id": dataset_ref.dataset_id,
+                        "table_id": table_ref.table_id,
+                        "project_id": project_id,
+                        "location": table_obj.location,
+                        "num_rows": table_obj.num_rows,
+                        "size_bytes": table_obj.num_bytes,
+                        "created": (
+                            table_obj.created.isoformat() if table_obj.created else None
+                        ),
+                        "expires": (
+                            table_obj.expires.isoformat() if table_obj.expires else None
+                        ),
+                        "labels": table_obj.labels,
+                    }
+                    recommendations["available_tables"].append(table_details)
+
+                    # Large table check (> 1 TB)
+                    if table_obj.num_bytes and table_obj.num_bytes > 1_000_000_000_000:
+                        recommendations["large_tables"].append(
+                            {
+                                "resource_details": table_details,
+                                "recommendation": {
+                                    "action": "Partition or delete large table",
+                                    "reason": f"Table size is {table_obj.num_bytes / 1_000_000_000_000:.2f} TB",
+                                    "suggestions": [
+                                        "Partition tables by date or other fields",
+                                        "Delete old or unused data",
+                                        "Export and archive infrequently accessed data",
+                                    ],
+                                },
+                            }
+                        )
+
+                    # Unused table check (no queries in last 90 days)
+                    last_90_days = datetime.utcnow() - timedelta(days=90)
+                    # Table.last_modified is updated on schema/data change, not query, so we use metadata
+                    if table_obj.num_rows == 0 or (
+                        table_obj.modified and table_obj.modified < last_90_days
+                    ):
+                        recommendations["unused_tables"].append(
+                            {
+                                "resource_details": table_details,
+                                "recommendation": {
+                                    "action": "Delete or archive unused table",
+                                    "reason": "Table has not been modified or queried in the last 90 days",
+                                    "suggestions": [
+                                        "Delete if no longer needed",
+                                        "Export to Cloud Storage for archival",
+                                    ],
+                                },
+                            }
+                        )
+
+                    # Long retention check (no expiration set)
+                    if not table_obj.expires:
+                        recommendations["long_retention_tables"].append(
+                            {
+                                "resource_details": table_details,
+                                "recommendation": {
+                                    "action": "Set table expiration",
+                                    "reason": "Table has no expiration and may accumulate costs over time",
+                                    "suggestions": [
+                                        "Set expiration for temporary or staging tables",
+                                        "Regularly review tables without expiration",
+                                    ],
+                                },
+                            }
+                        )
+
+                except Exception as table_e:
+                    logger.warning(
+                        f"Warning: Could not analyze table {table_ref}: {table_e}"
+                    )
+                    continue
 
         return recommendations
 

@@ -227,6 +227,76 @@ class TestAWSTools(unittest.TestCase):
         # Should return empty lists when errors occur
         self.assertEqual(result["available_instances"], [])
 
+    @patch("clouds.aws.tools.get_boto3_session")
+    def test_analyze_lambda_optimization_success(self, mock_get_session):
+        mock_session = MagicMock()
+        mock_ec2 = MagicMock()
+        mock_cloudwatch = MagicMock()
+        mock_lambda = MagicMock()
+
+        # Mock Lambda paginator
+        mock_paginator = MagicMock()
+        mock_paginator.paginate.return_value = [
+            {
+                "Functions": [
+                    {
+                        "FunctionName": "test-func",
+                        "MemorySize": 128,
+                        "Timeout": 3,
+                        "LastModified": "2023-01-01T00:00:00.000+0000",
+                        "Runtime": "python3.8",
+                        "Handler": "lambda_function.lambda_handler",
+                    }
+                ]
+            }
+        ]
+        mock_lambda.get_paginator.return_value = mock_paginator
+
+        # Mock CloudWatch metrics
+        mock_cloudwatch.get_metric_statistics.return_value = {"Datapoints": [{"Sum": 1, "Average": 1000}]}
+
+        mock_session.client.side_effect = lambda service, **kwargs: {
+            "ec2": mock_ec2,
+            "cloudwatch": mock_cloudwatch,
+            "lambda": mock_lambda,
+        }[service]
+
+        mock_get_session.return_value = (mock_session, "default", ["us-east-1"])
+
+        result = tools.analyze_lambda_optimization.invoke(
+            {"profile_name": "default", "regions": ["us-east-1"]}
+        )
+
+        self.assertIsInstance(result, dict)
+        self.assertIn("unused_functions", result)
+        self.assertIn("available_functions", result)
+
+    @patch("clouds.aws.tools.get_boto3_session")
+    def test_analyze_lambda_optimization_error_handling(self, mock_get_session):
+        mock_session = MagicMock()
+        mock_ec2 = MagicMock()
+        mock_cloudwatch = MagicMock()
+        mock_lambda = MagicMock()
+
+        # Simulate Lambda paginator raising an exception
+        mock_lambda.get_paginator.side_effect = Exception("Simulated Lambda failure")
+
+        mock_session.client.side_effect = lambda service, **kwargs: {
+            "ec2": mock_ec2,
+            "cloudwatch": mock_cloudwatch,
+            "lambda": mock_lambda,
+        }[service]
+
+        mock_get_session.return_value = (mock_session, "default", ["us-east-1"])
+
+        result = tools.analyze_lambda_optimization.invoke(
+            {"profile_name": "default", "regions": ["us-east-1"]}
+        )
+
+        self.assertIsInstance(result, dict)
+        self.assertIn("unused_functions", result)
+        self.assertIn("available_functions", result)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -135,7 +135,7 @@ def get_cost_breakdown(
                     currency = getattr(details, "currency", "USD")
                     cost_by_service[service] = cost_by_service.get(service, 0.0) + cost
 
-            except Exception as ex:
+            except Exception:
                 continue
 
         if not cost_by_service:

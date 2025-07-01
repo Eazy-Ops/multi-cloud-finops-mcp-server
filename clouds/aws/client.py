@@ -1,5 +1,3 @@
-from typing import Optional, Tuple
-
 import logging
 from typing import Optional, Tuple
 
@@ -7,6 +5,7 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 logger = logging.getLogger(__name__)
+
 
 def get_boto3_session(
     profile_name: Optional[str] = None,

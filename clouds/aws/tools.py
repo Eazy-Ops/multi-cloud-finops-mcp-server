@@ -1,5 +1,6 @@
 # clouds/aws/tools.py
 
+import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -10,7 +11,7 @@ from clouds.aws.client import get_boto3_session
 from clouds.aws.utils import (cost_filters, get_budget_data, get_stopped_ec2,
                               get_unassociated_eips,
                               get_unattached_ebs_volumes)
-import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -219,7 +220,9 @@ def analyze_rds_instances(
             instances = rds.describe_db_instances()
         except Exception as e:
             # Skip region if API call fails (e.g., permission denied)
-            logger.warning(f"Warning: Could not retrieve RDS instances for region {region}: {e}")
+            logger.warning(
+                f"Warning: Could not retrieve RDS instances for region {region}: {e}"
+            )
             continue
 
         for instance in instances["DBInstances"]:
@@ -1546,3 +1549,227 @@ def analyze_aws_eks_clusters(
             continue
 
     return recommendations
+
+
+@tool
+def analyze_lambda_optimization(
+    profile_name: str, regions: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Analyze AWS Lambda functions for cost optimization opportunities.
+    Identifies:
+    - Unused functions (no invocations in last 90 days)
+    - Functions with high memory allocation
+    - Functions with long average duration
+
+    Args:
+        profile_name: AWS profile name
+        regions: Optional list of regions to analyze. If not provided, analyzes all regions.
+
+    Returns:
+        Dictionary containing Lambda optimization recommendations with resource details
+    """
+    from datetime import datetime, timedelta
+
+    session, _, _ = get_boto3_session(profile_name)
+    ec2 = session.client("ec2")
+    cloudwatch = session.client("cloudwatch")
+
+    # If regions are not provided, retrieve all regions
+    if not regions:
+        regions = [
+            r["RegionName"] for r in ec2.describe_regions(AllRegions=False)["Regions"]
+        ]
+
+    recommendations = {
+        "unused_functions": [],
+        "high_memory_functions": [],
+        "long_duration_functions": [],
+        "available_functions": [],
+    }
+
+    for region in regions:
+        lambda_client = session.client("lambda", region_name=region)
+        cloudwatch = session.client("cloudwatch", region_name=region)
+        try:
+            paginator = lambda_client.get_paginator("list_functions")
+            for page in paginator.paginate():
+                for function in page["Functions"]:
+                    function_name = function["FunctionName"]
+                    memory_size = function["MemorySize"]
+                    timeout = function["Timeout"]
+                    last_modified = function["LastModified"]
+                    runtime = function.get("Runtime")
+                    handler = function.get("Handler")
+
+                    function_details = {
+                        "function_name": function_name,
+                        "region": region,
+                        "memory_size": memory_size,
+                        "timeout": timeout,
+                        "last_modified": last_modified,
+                        "runtime": runtime,
+                        "handler": handler,
+                    }
+                    recommendations["available_functions"].append(function_details)
+
+                    # Check for unused functions (no invocations in last 90 days)
+                    end_time = datetime.utcnow()
+                    start_time = end_time - timedelta(days=90)
+                    invocations = cloudwatch.get_metric_statistics(
+                        Namespace="AWS/Lambda",
+                        MetricName="Invocations",
+                        Dimensions=[{"Name": "FunctionName", "Value": function_name}],
+                        StartTime=start_time,
+                        EndTime=end_time,
+                        Period=86400 * 7,  # Weekly
+                        Statistics=["Sum"],
+                    )
+                    total_invocations = (
+                        sum(point["Sum"] for point in invocations["Datapoints"])
+                        if invocations["Datapoints"]
+                        else 0
+                    )
+                    if total_invocations == 0:
+                        recommendations["unused_functions"].append(
+                            {
+                                "resource_details": function_details,
+                                "recommendation": {
+                                    "action": "Delete or review unused Lambda function",
+                                    "reason": "No invocations in last 90 days",
+                                    "suggestions": [
+                                        "Delete if no longer needed",
+                                        "Review triggers and event sources",
+                                    ],
+                                },
+                            }
+                        )
+
+                    # Check for high memory allocation (> 1024 MB)
+                    if memory_size > 1024:
+                        recommendations["high_memory_functions"].append(
+                            {
+                                "resource_details": function_details,
+                                "recommendation": {
+                                    "action": "Reduce memory allocation if possible",
+                                    "reason": f"Function allocated {memory_size} MB",
+                                    "suggestions": [
+                                        "Profile function to determine optimal memory",
+                                        "Reduce memory for cost savings if performance allows",
+                                    ],
+                                },
+                            }
+                        )
+
+                    # Check for long average duration (> 3 seconds)
+                    durations = cloudwatch.get_metric_statistics(
+                        Namespace="AWS/Lambda",
+                        MetricName="Duration",
+                        Dimensions=[{"Name": "FunctionName", "Value": function_name}],
+                        StartTime=start_time,
+                        EndTime=end_time,
+                        Period=86400 * 7,  # Weekly
+                        Statistics=["Average"],
+                    )
+                    avg_duration = (
+                        sum(point["Average"] for point in durations["Datapoints"])
+                        / len(durations["Datapoints"])
+                        if durations["Datapoints"]
+                        else 0
+                    )
+                    if avg_duration > 3000:  # milliseconds
+                        recommendations["long_duration_functions"].append(
+                            {
+                                "resource_details": function_details,
+                                "recommendation": {
+                                    "action": "Optimize function code or increase memory",
+                                    "reason": f"Average duration is {avg_duration:.2f} ms",
+                                    "suggestions": [
+                                        "Profile and optimize function code",
+                                        "Increase memory if function is CPU-bound",
+                                        "Review dependencies and cold start impact",
+                                    ],
+                                },
+                            }
+                        )
+        except Exception as e:
+            logger.warning(
+                f"Warning: Could not analyze Lambda functions in region {region}: {e}"
+            )
+            continue
+
+    return recommendations
+
+
+@tool
+def save_report(
+    title: str, content: str, file_format: str = "txt", filename: str = None
+) -> dict:
+    """
+    Save a report (PDF, CSV, TXT, etc) to the reports directory.
+
+    Args:
+        title: Used to generate the filename if filename not provided
+        content: Full content as string (LLM-generated)
+        file_format: File type: 'txt', 'csv', or 'md'. Use 'pdf' only with pre-rendered plain text (no HTML)
+        filename: Optional full filename. If not given, it is auto-generated from title and file_format
+
+    Returns:
+        dict: { success, filepath } or { error }
+    """
+    import os
+    import re
+    from datetime import datetime
+
+    try:
+        file_format = file_format.lower().strip(".")
+        if file_format not in ["txt", "csv", "md", "log", "json", "pdf"]:
+            return {
+                "success": False,
+                "error": f"Unsupported file format: {file_format}",
+            }
+        reports_dir = os.path.join(os.getcwd(), "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+        if not filename:
+            base = re.sub(r"\W+", "_", title.lower()).strip("_")
+            filename = (
+                f"{base}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file_format}"
+            )
+
+        filepath = os.path.join(reports_dir, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content.strip() + "\n")
+
+        return {"success": True, "filepath": filepath}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@tool
+def save_report_csv(title: str, csv_content: str, filename: str = None) -> dict:
+    """
+    Save LLM-generated CSV string content to a file.
+    Args:
+        title: Title of the report (used to generate filename if not provided)
+        csv_content: Full CSV string (with header and rows) from LLM
+        filename: Optional filename. If not provided, it will be generated.
+    Returns:
+        Dict with 'success' and 'filepath' or 'error'
+    """
+    import os
+    import re
+    from datetime import datetime
+
+    try:
+        reports_dir = os.path.join(os.getcwd(), "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+        if not filename:
+            base = re.sub(r"\W+", "_", title.lower()).strip("_")
+            filename = f"{base}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        filepath = os.path.join(reports_dir, filename)
+        with open(filepath, mode="w") as f:
+            f.write(csv_content.strip() + "\n")
+
+        return {"success": True, "filepath": filepath}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

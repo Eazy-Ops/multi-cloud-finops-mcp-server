@@ -5,6 +5,7 @@ from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
 from config import GCP_BILLING_DATASET, GCP_BILLING_TABLE_PREFIX
 
 
