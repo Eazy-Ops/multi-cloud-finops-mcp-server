@@ -10,6 +10,8 @@ from clouds.aws.client import get_boto3_session
 from clouds.aws.utils import (cost_filters, get_budget_data, get_stopped_ec2,
                               get_unassociated_eips,
                               get_unattached_ebs_volumes)
+import logging
+logger = logging.getLogger(__name__)
 
 
 @tool
@@ -217,7 +219,7 @@ def analyze_rds_instances(
             instances = rds.describe_db_instances()
         except Exception as e:
             # Skip region if API call fails (e.g., permission denied)
-            print(f"Warning: Could not retrieve RDS instances for region {region}: {e}")
+            logger.warning(f"Warning: Could not retrieve RDS instances for region {region}: {e}")
             continue
 
         for instance in instances["DBInstances"]:
@@ -757,7 +759,7 @@ def analyze_aws_disks(
                     )
 
         except Exception as e:
-            print(f"Warning: Could not analyze volumes in region {region}: {e}")
+            logger.warning("Could not analyze volumes in region %s: %s", region, e)
             continue
 
     # Check IAM policies for volume management
@@ -786,7 +788,7 @@ def analyze_aws_disks(
                         }
                     )
     except Exception as e:
-        print(f"Warning: Could not analyze IAM policies: {e}")
+        logger.warning(f"Warning: Could not analyze IAM policies: {e}")
 
     return recommendations
 
@@ -982,7 +984,7 @@ def analyze_aws_network(
                     )
 
         except Exception as e:
-            print(
+            logger.warning(
                 f"Warning: Could not analyze network resources in region {region}: {e}"
             )
             continue
@@ -1098,7 +1100,7 @@ def analyze_aws_snapshots(
                         )
 
                 except Exception as snapshot_e:
-                    print(
+                    logger.warning(
                         f"Warning: Could not analyze snapshot {snapshot['SnapshotId']}: {snapshot_e}"
                     )
                     continue
@@ -1164,18 +1166,18 @@ def analyze_aws_snapshots(
                             )
 
                     except Exception as db_snapshot_e:
-                        print(
+                        logger.warning(
                             f"Warning: Could not analyze RDS snapshot {db_snapshot['DBSnapshotIdentifier']}: {db_snapshot_e}"
                         )
                         continue
 
             except Exception as rds_e:
-                print(
+                logger.warning(
                     f"Warning: Could not analyze RDS snapshots in region {region}: {rds_e}"
                 )
 
         except Exception as region_e:
-            print(
+            logger.warning(
                 f"Warning: Could not analyze snapshots in region {region}: {region_e}"
             )
             continue
@@ -1267,13 +1269,13 @@ def analyze_aws_static_ips(
                         )
 
                 except Exception as eip_e:
-                    print(
+                    logger.warning(
                         f"Warning: Could not analyze EIP {eip.get('AllocationId', 'unknown')}: {eip_e}"
                     )
                     continue
 
         except Exception as region_e:
-            print(
+            logger.warning(
                 f"Warning: Could not analyze static IPs in region {region}: {region_e}"
             )
             continue
@@ -1484,18 +1486,18 @@ def analyze_aws_eks_clusters(
                                                     }
                                                 )
                                         except Exception as metric_e:
-                                            print(
+                                            logger.warning(
                                                 f"Warning: Could not get metrics for node group {nodegroup_name}: {metric_e}"
                                             )
 
                                 except Exception as nodegroup_e:
-                                    print(
+                                    logger.warning(
                                         f"Warning: Could not analyze node group {nodegroup_name}: {nodegroup_e}"
                                     )
                                     continue
 
                     except Exception as nodegroup_list_e:
-                        print(
+                        logger.warning(
                             f"Warning: Could not list node groups for cluster {cluster_name}: {nodegroup_list_e}"
                         )
 
@@ -1527,18 +1529,18 @@ def analyze_aws_eks_clusters(
                                 }
                             )
                     except Exception as iam_e:
-                        print(
+                        logger.warning(
                             f"Warning: Could not analyze IAM for cluster {cluster_name}: {iam_e}"
                         )
 
                 except Exception as cluster_e:
-                    print(
+                    logger.warning(
                         f"Warning: Could not analyze cluster {cluster_name}: {cluster_e}"
                     )
                     continue
 
         except Exception as region_e:
-            print(
+            logger.warning(
                 f"Warning: Could not analyze EKS clusters in region {region}: {region_e}"
             )
             continue

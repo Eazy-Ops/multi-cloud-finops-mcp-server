@@ -1,8 +1,12 @@
 from typing import Optional, Tuple
 
+import logging
+from typing import Optional, Tuple
+
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+logger = logging.getLogger(__name__)
 
 def get_boto3_session(
     profile_name: Optional[str] = None,
@@ -26,4 +30,5 @@ def get_boto3_session(
         return session, account_id, None
 
     except (BotoCoreError, ClientError) as e:
+        logger.error("Error creating boto3 session: %s", e)
         return None, None, str(e)

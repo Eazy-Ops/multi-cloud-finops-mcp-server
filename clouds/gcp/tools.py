@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
@@ -9,6 +10,8 @@ from clouds.gcp.client import get_gcp_credentials
 from clouds.gcp.utils import (get_budget_data, get_gcp_cost_breakdown,
                               get_metric_usage, get_stopped_vms,
                               get_unattached_disks)
+
+logger = logging.getLogger(__name__)
 
 
 @tool
@@ -429,7 +432,7 @@ def analyze_gcp_storage(
                         )
 
             except Exception as inner_e:
-                print(f"Warning: Could not analyze bucket {bucket.name}: {inner_e}")
+                logger.warning(f"Warning: Could not analyze bucket {bucket.name}: {inner_e}")
                 continue
 
         return recommendations
@@ -559,7 +562,7 @@ def analyze_gcp_disks(
                         )
 
                 except Exception as disk_e:
-                    print(f"Warning: Could not analyze disk {disk.name}: {disk_e}")
+                    logger.warning(f"Warning: Could not analyze disk {disk.name}: {disk_e}")
                     continue
 
         from google.cloud import resourcemanager_v3
@@ -686,7 +689,7 @@ def analyze_gcp_snapshots(
                     )
 
             except Exception as snapshot_e:
-                print(
+                logger.warning(
                     f"Warning: Could not analyze snapshot {snapshot.name}: {snapshot_e}"
                 )
                 continue
@@ -743,13 +746,13 @@ def analyze_gcp_snapshots(
                                 )
 
                 except Exception as e:
-                    print(
+                    logger.warning(
                         f"Warning: Could not process backups for instance {instance['name']}: {e}"
                     )
                     continue
 
         except Exception as sql_e:
-            print(f"Warning: Could not analyze Cloud SQL: {sql_e}")
+            logger.warning(f"Warning: Could not analyze Cloud SQL: {sql_e}")
 
         return recommendations
 
@@ -842,13 +845,13 @@ def analyze_gcp_static_ips(
                             )
 
                     except Exception as address_e:
-                        print(
+                        logger.warning(
                             f"Warning: Could not analyze address {address.name}: {address_e}"
                         )
                         continue
 
             except Exception as region_e:
-                print(f"Warning: Could not analyze region {region}: {region_e}")
+                logger.warning(f"Warning: Could not analyze region {region}: {region_e}")
                 continue
 
         # Analyze global static IPs
@@ -884,13 +887,13 @@ def analyze_gcp_static_ips(
                         )
 
                 except Exception as global_address_e:
-                    print(
+                    logger.warning(
                         f"Warning: Could not analyze global address {address.name}: {global_address_e}"
                     )
                     continue
 
         except Exception as global_e:
-            print(f"Warning: Could not analyze global addresses: {global_e}")
+            logger.warning(f"Warning: Could not analyze global addresses: {global_e}")
 
         return recommendations
 
@@ -936,7 +939,7 @@ def analyze_gcp_gke_clusters(
             for region in compute_client.list(project=project_id):
                 locations.append(region.name)
         except Exception as e:
-            print(f"Warning: Could not list regions: {e}")
+            logger.warning("Could not list regions: %s", e)
 
         for location in locations:
             try:
@@ -1101,9 +1104,8 @@ def analyze_gcp_gke_clusters(
                                                     }
                                                 )
                                         except Exception as metric_e:
-                                            print(
-                                                f"Warning: Could not get metrics for node pool {node_pool.name}: {metric_e}"
-                                            )
+                                            logger.warning("Could not get metrics for node pool %s: %s", node_pool.name,
+                                                           metric_e)
 
                                     # Check if Spot instances are not enabled
                                     if node_pool.config and not node_pool.config.spot:
@@ -1123,9 +1125,7 @@ def analyze_gcp_gke_clusters(
                                         )
 
                                 except Exception as node_pool_e:
-                                    print(
-                                        f"Warning: Could not analyze node pool {node_pool.name}: {node_pool_e}"
-                                    )
+                                    logger.warning("Could not analyze node pool %s: %s", node_pool.name, node_pool_e)
                                     continue
 
                         # Check IAM roles for excessive permissions
@@ -1164,20 +1164,14 @@ def analyze_gcp_gke_clusters(
                                         }
                                     )
                         except Exception as iam_e:
-                            print(
-                                f"Warning: Could not analyze IAM for cluster {cluster.name}: {iam_e}"
-                            )
+                            logger.warning("Could not analyze IAM for cluster %s: %s", cluster.name, iam_e)
 
                     except Exception as cluster_e:
-                        print(
-                            f"Warning: Could not analyze cluster {cluster.name}: {cluster_e}"
-                        )
+                        logger.warning("Could not analyze cluster %s: %s", cluster.name, cluster_e)
                         continue
 
             except Exception as location_e:
-                print(
-                    f"Warning: Could not analyze GKE clusters in location {location}: {location_e}"
-                )
+                logger.warning("Could not analyze GKE clusters in location %s: %s", location, location_e)
                 continue
 
         return recommendations

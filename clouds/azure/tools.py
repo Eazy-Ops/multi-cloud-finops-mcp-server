@@ -1,3 +1,4 @@
+import logging
 import traceback
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -14,6 +15,8 @@ from clouds.azure.client import get_azure_credentials
 from clouds.azure.utils import (get_budget_data, get_cost_breakdown,
                                 get_stopped_vms, get_total_bytes,
                                 get_unattached_disks)
+
+logger = logging.getLogger(__name__)
 
 
 @tool
@@ -557,7 +560,6 @@ def analyze_azure_storage(
         return recommendations
 
     except Exception as e:
-        traceback.print_exc()
         return {"error": str(e), "recommendations": {}}
 
 
@@ -693,7 +695,7 @@ def analyze_azure_instances(
                             }
                         )
             except Exception as metric_err:
-                print(f"Metric error for VM {vm.name}: {metric_err}")
+                logger.warning("Metric error for VM %s: %s", vm.name, metric_err)
                 continue
 
         # IAM review
@@ -719,7 +721,7 @@ def analyze_azure_instances(
                         }
                     )
         except Exception as iam_err:
-            print(f"IAM error: {iam_err}")
+            logger.warning("IAM error: %s", iam_err)
 
         return recommendations
 
@@ -838,9 +840,7 @@ def analyze_azure_snapshots(
                     )
 
             except Exception as snapshot_e:
-                print(
-                    f"Warning: Could not analyze snapshot {snapshot.name}: {snapshot_e}"
-                )
+                ogger.warning("Could not analyze snapshot %s: %s", snapshot.name, snapshot_e)
                 continue
 
         return recommendations
@@ -886,7 +886,7 @@ def analyze_azure_static_ips(
             resource_client = ResourceManagementClient(credentials, subscription_id)
             resource_groups = [rg.name for rg in resource_client.resource_groups.list()]
         except Exception as rg_e:
-            print(f"Warning: Could not list resource groups: {rg_e}")
+            logger.warning("Could not list resource groups: %s", rg_e)
 
         for resource_group in resource_groups:
             try:
@@ -938,15 +938,12 @@ def analyze_azure_static_ips(
                             )
 
                     except Exception as ip_e:
-                        print(
-                            f"Warning: Could not analyze public IP {public_ip.name}: {ip_e}"
-                        )
+                        logger.warning("Could not analyze public IP %s: %s", public_ip.name, ip_e)
                         continue
 
             except Exception as rg_network_e:
-                print(
-                    f"Warning: Could not analyze network resources in resource group {resource_group}: {rg_network_e}"
-                )
+                logger.warning("Could not analyze network resources in resource group %s: %s", resource_group,
+                               rg_network_e)
                 continue
 
         return recommendations
@@ -1149,9 +1146,8 @@ def analyze_azure_aks_clusters(
                                                 }
                                             )
                                 except Exception as metric_e:
-                                    print(
-                                        f"Warning: Could not get metrics for agent pool {agent_pool.name}: {metric_e}"
-                                    )
+                                    logger.warning("Could not get metrics for agent pool %s: %s", agent_pool.name,
+                                                   metric_e)
 
                             # Check if Spot instances are not enabled
                             if not agent_pool.spot_max_price:
@@ -1172,9 +1168,7 @@ def analyze_azure_aks_clusters(
                                 )
 
                         except Exception as agent_pool_e:
-                            print(
-                                f"Warning: Could not analyze agent pool {agent_pool.name}: {agent_pool_e}"
-                            )
+                            logger.warning("Could not analyze agent pool %s: %s", agent_pool.name, agent_pool_e)
                             continue
 
                 # Check IAM roles for excessive permissions
@@ -1211,12 +1205,11 @@ def analyze_azure_aks_clusters(
                                 }
                             )
                 except Exception as iam_e:
-                    print(
-                        f"Warning: Could not analyze IAM for cluster {cluster.name}: {iam_e}"
-                    )
+                    logger.warning("Could not analyze IAM for cluster %s: %s", cluster.name, iam_e)
+
 
             except Exception as cluster_e:
-                print(f"Warning: Could not analyze cluster {cluster.name}: {cluster_e}")
+                logger.warning("Could not analyze cluster %s: %s", cluster.name, cluster_e)
                 continue
 
         return recommendations
