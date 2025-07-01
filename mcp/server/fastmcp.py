@@ -198,10 +198,27 @@ def run():
             border_style="green",
         )
     )
+    examples = [
+        "[cyan]•[/cyan] What is my AWS cost breakdown for the last 7 days profile prfofile_name",
+        "[cyan]•[/cyan] Run a GCP FinOps audit for project project_id for billing account name_of_dataset",
+        "[cyan]•[/cyan] Quick Network analysis for Azure subscription subscription_id",
+        "[cyan]•[/cyan] Show underutilized EC2 instances in us-west-1.",
+        "[cyan]•[/cyan] Find idle disks in GCP for project project_id",
+        "[cyan]•[/cyan] Analyze my S3 buckets for optimization.",
+    ]
+
+    table = Table.grid(padding=1)
+    table.add_column(justify="left")
+    for example in examples:
+        table.add_row(Text.from_markup(example))
+
+    console.print(Panel(Align.left(table), title="[bold magenta]Example Prompts[/bold magenta]", border_style="magenta"))
+
     while True:
         try:
             user_input = prompt(
-                "Ask me your Multi-Cloud FinOps question (or 'exit'): ", history=history
+                "Ask me your Multi-Cloud FinOps question (or 'exit'): ",
+                history=history
             )
             if user_input.strip().lower() in ["exit", "quit"]:
                 break
