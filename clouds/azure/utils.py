@@ -136,7 +136,6 @@ def get_cost_breakdown(
                     cost_by_service[service] = cost_by_service.get(service, 0.0) + cost
 
             except Exception as ex:
-                print(str(ex), "===============")
                 continue
 
         if not cost_by_service:

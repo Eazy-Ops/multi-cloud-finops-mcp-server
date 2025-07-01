@@ -166,7 +166,6 @@ def list_aws_profiles(
     """
     try:
         session, _, b = get_boto3_session(profile_name=profile_name)
-        print(session, "==============")
         profiles = session.available_profiles
         return {"profiles": profiles, "error": None}
     except Exception as e:
