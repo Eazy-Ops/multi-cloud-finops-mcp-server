@@ -8,6 +8,9 @@ from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import create_react_agent
 from prompt_toolkit import prompt
 from prompt_toolkit.history import InMemoryHistory
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
 
 from clouds.aws.tools import (analyze_aws_disks, analyze_aws_eks_clusters,
                               analyze_aws_network, analyze_aws_snapshots,
@@ -30,6 +33,8 @@ from clouds.gcp.tools import (analyze_gcp_disks, analyze_gcp_gke_clusters,
                               list_gcp_projects, list_gke_clusters,
                               list_sql_instances, run_gcp_finops_audit)
 from config import google_api_key
+
+console = Console()
 
 
 class AgentState(TypedDict):
@@ -81,7 +86,6 @@ tools = [
     analyze_azure_aks_clusters,
 ]
 
-
 agent_prompt = ChatPromptTemplate.from_messages(
     [
         (
@@ -104,9 +108,7 @@ workflow.set_entry_point("run_agent")
 workflow.add_edge("run_agent", END)
 graph_executor = workflow.compile()
 
-
 nest_asyncio.apply()
-
 history = InMemoryHistory()
 
 
@@ -117,12 +119,18 @@ async def handle_input(user_input):
     messages = result.get("messages", [])
     ai_responses = [msg for msg in messages if msg.type == "ai"]
     if ai_responses:
-        print(ai_responses[-1].content)
+        content = ai_responses[-1].content.strip()
+        console.print(
+            Panel(Text(content, justify="left"), title="[bold cyan]Finops-MCP Assistant[/bold cyan]", border_style="cyan")
+        )
     else:
-        print("No response from the assistant.")
+        console.print(
+            Panel(Text("No response from the assistant.", justify="left"), title="[red]Finops-MCP Assistant[/red]")
+        )
 
 
 def run():
+    console.print(Panel("💬 [bold green]Multi-Cloud FinOps CLI Assistant[/bold green]\n(Type 'exit' to quit)", border_style="green"))
     while True:
         try:
             user_input = prompt(
@@ -132,7 +140,9 @@ def run():
                 break
             asyncio.run(handle_input(user_input))
         except Exception as e:
-            print("Error: due to this exception", e)
+            console.print(
+                Panel(Text(f"Error: {e}", justify="left"), title="[bold red]Finops-MCP Assistant[/bold red]", border_style="red")
+            )
 
 
 if __name__ == "__main__":
