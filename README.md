@@ -275,9 +275,29 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 We welcome contributions from the community! Please see our [contributing guidelines](CONTRIBUTING.md) for more information.
 
+When submitting a pull request, please use our [pull request template](/.github/pull_request_template.md) to help us review your contribution.
+
 ## Code of Conduct
 
 We have a [code of conduct](CODE_OF_CONDUCT.md) that we expect all contributors to follow. Please read it before contributing.
+
+## 🐳 Running with Docker Compose
+
+You can run FastMCP using Docker Compose for easy setup and isolation.
+
+### 1. Build the Docker image
+
+```bash
+docker compose build
+```
+
+### 2. Run the FinOps CLI
+
+```bash
+docker compose run finops-cli
+```
+
+You can now enter prompts just as you would with the CLI
 
 ---
 

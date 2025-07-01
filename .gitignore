@@ -5,7 +5,6 @@ credentials/
 __pycache__/
 *.py[cod]
 *$py.class
-.github
 # C extensions
 *.so
 

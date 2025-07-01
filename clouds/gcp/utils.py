@@ -5,6 +5,7 @@ from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from config import GCP_BILLING_DATASET, GCP_BILLING_TABLE_PREFIX
 
 
 def get_stopped_vms(
@@ -104,8 +105,6 @@ def get_gcp_cost_breakdown(
     time_range_days: Optional[int] = None,
     start_date_iso: Optional[str] = None,
     end_date_iso: Optional[str] = None,
-    dataset: str = "dev-ezo.dev_dataset",
-    table_prefix: str = "gcp_billing_export_",
     region_wise: bool = False,
 ) -> Tuple[Dict[str, Any], str]:
     try:
@@ -122,7 +121,7 @@ def get_gcp_cost_breakdown(
             end = now
 
         bq_client = bigquery.Client(credentials=credentials, project=project_id)
-        table_name = f"`{dataset}.gcp_billing_export_*`"
+        table_name = f"`{GCP_BILLING_DATASET}.{GCP_BILLING_TABLE_PREFIX}*`"
         if region_wise:
             query = f"""
             SELECT

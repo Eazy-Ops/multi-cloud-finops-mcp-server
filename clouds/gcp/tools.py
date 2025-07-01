@@ -51,7 +51,6 @@ def get_gcp_cost(
         time_range_days,
         start_date_iso,
         end_date_iso,
-        table_prefix="gcp_billing_export_",
         region_wise=region_wise,
     )
 

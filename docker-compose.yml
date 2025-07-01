@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  finops-cli:
+    build: .
+    volumes:
+      - ~/.aws:/root/.aws                         # AWS credentials
+      - ~/.config/gcloud:/root/.config/gcloud     # GCP ADC credentials
+      - ~/.azure:/root/.azure                     # Azure CLI tokens
+    environment:
+      AWS_PROFILE: default
+      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
+      AZURE_CONFIG_DIR: /root/.azure
+      PYTHONIOENCODING: utf-8
+    stdin_open: true
+    tty: true
