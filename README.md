@@ -130,56 +130,96 @@ Then ask questions in Claude Desktop, Amazon Q, or any MCP-compatible client:
 
 ## 💬 Example Prompts
 
-### 📊 AZURE finops audit for subscription_id id
+### 📊 Azure quick network analysis for subscription_id id
 
-```json
-{
-  "audit": {
-    "stopped_vms": [
-      {"name": "vm-dev-1", "region": "eastus", "status": "Stopped"}
-    ],
-    "unattached_disks": [
-      {"id": "disk-abc", "size_gb": 100}
-    ]
-  }
-}
+```bash
+OK. I've analyzed the Azure network resources for subscription ID 8a4e83d9-b1b3-485f-a7d1-0aab11284c12 and found some cost optimization opportunities:                                                                  │
+│                                                                                                                                                                                                                         │
+│  • Expensive NAT Gateways: The NAT Gateway testNAT in centralus has low usage. Consider replacing it with a NAT VM for cost savings, using Service Endpoints where possible, or reviewing if NAT is actually needed.    │
+
+
+│  • Idle Load Balancers: The load balancer v2-api-lb in westus has had no traffic in the last 30 days.  It's recommended to delete it, but ensure no critical services depend on it before doing so.                     │
+
+│  • Unused Public IPs: Several public IPs are not associated with any resources and can be deleted to avoid unnecessary costs. These include testIPforNAT, DBA-VPN-PRITUNL-ip, OpenVPN-ip, DBA-VM-01-ip, DBA-VM-02-ip,   │
+│    DBA-VM-04-ip, DBAVM03ip245, DBA-QM-STAGE-ip, and QM-LOGS-ip.  Remember, Azure charges for unassociated public IPs.                                                                                                   │
+│                                                                                                                                                                                                                         │
+│ This analysis includes details about Load Balancers, NAT Gateways, Network Security Groups (NSGs), and Public IPs.  Notably, there are no unused NSGs identified in this analysis.  The detailed information about each │
+│ resource, including its location, SKU, and tags, is available in the raw output if you need to dive deeper.
+
 ```
 
 ### 💸 AWS cost break down for the current month profile any_locally_configured_profile
 
-```json
-{
-  "total_cost": 124.50,
-  "grouped_by_service": {
-    "Amazon EC2": 78.23,
-    "Amazon S3": 32.91,
-    "CloudWatch": 13.36
-  }
-}
+```bas
+│                                                                                                                                                                                                                         │
+│ Total Cost: $1046.54                                                                                                                                                                                                    │
+│                                                                                                                                                                                                                         │
+│ Cost By Service:                                                                                                                                                                                                        │
+│                                                                                                                                                                                                                         │
+│  • Amazon EC2 - Compute: $0.01                                                                                                                                                                                          │
+│  • Amazon EC2 - Other: $100.88                                                                                                                                                                                          │
+│  • Amazon Elastic Load Balancing: $125.31                                                                                                                                                                               │
+│  • Amazon Relational Database Service: $12.04                                                                                                                                                                           │
+│  • Amazon Simple Storage Service (S3): $3.52                                                                                                                                                                            │
+│  • Amazon Virtual Private Cloud (VPC): $87.26                                                                                                                                                                           │
+│  • Amazon MQ: $677.81                                                                                                                                                                                                   │
+│  • AWS CloudShell: $0.00                                                                                                                                                                                                │
+│  • AWS CloudTrail: $0.00                                                                                                                                                                                                │
+│  • AWS Config: $3.73                                                                                                                                                                                                    │
+│  • AWS Cost Explorer: $0.95                                                                                                                                                                                             │
+│  • AWS Glue: $0.00                                                                                                                                                                                                      │
+│  • AWS Key Management Service (KMS): $2.89                                                                                                                                                                              │
+│  • AWS Lambda: $0.00                                                                                                                                                                                                    │
+│  • AWS Secrets Manager: $0.39                                                                                                                                                                                           │
+│  • AWS Security Hub: $9.58                                                                                                                                                                                              │
+│  • AWS Service Catalog: $0.00                                                                                                                                                                                           │
+│  • AWS Step Functions: $0.00                                                                                                                                                                                            │
+│  • AWS WAF: $15.42                                                                                                                                                                                                      │
+│  • Amazon CloudFront: $0.00                                                                                                                                                                                             │
+│  • Amazon DynamoDB: $0.00                                                                                                                                                                                               │
+│  • Amazon Glacier: $0.00                                                                                                                                                                                                │
+│  • Amazon GuardDuty: $4.41                                                                                                                                                                                              │
+│  • Amazon Route 53: $0.21                                                                                                                                                                                               │
+│  • Amazon Simple Notification Service (SNS): $0.00                                                                                                                                                                      │
+│  • Amazon Simple Queue Service (SQS): $0.00                                                                                                                                                                             │
+│  • Amazon Simple Workflow Service (SWF): $0.00                                                                                                                                                                          │
+│  • Amazon SimpleDB: $0.00                                                                                                                                                                                               │
+│  • AmazonCloudWatch: $2.13                                 
 ```
 
 ### 💸 AWS rds instances having cpu utilization under 2 percent
 ```bash
 
 
-Following RDS instances have CPU utilization under 2 percent:
 
-* resource_name1 (1.73%)
-* resource_name2 (1.2%)
+│ The following RDS instances have CPU utilization under 2%:                                                                                                                                                              │
+│                                                                                                                                                                                                                         │
+│  • instance-reader (db.r6g.2xlarge):  1.65% average CPU utilization. Consider downsizing.                                                                                                                │         
 
 ```
 
 
 ### ☁️ Break down GCP spend in last 7 days project id project_id
 
-```json
-{
-  "project_id": "my-gcp-project",
-  "cost_breakdown": {
-    "Compute Engine": 41.50,
-    "BigQuery": 88.75
-  }
-}
+```bash
+│ Total Cost: $447.48                                                                                                                                                                                                     │
+│                                                                                                                                                                                                                         │
+│ Cost By Service:                                                                                                                                                                                                        │
+│                                                                                                                                                                                                                         │
+│  • BigQuery: $0.00                                                                                                                                                                                                      │
+│  • Cloud DNS: $0.38                                                                                                                                                                                                     │
+│  • Cloud Logging: $3.04                                                                                                                                                                                                 │
+│  • Cloud Memorystore for Redis: $33.76                                                                                                                                                                                  │
+│  • Cloud Monitoring: $0.00                                                                                                                                                                                              │
+│  • Cloud SQL: $63.54                                                                                                                                                                                                    │
+│  • Cloud Speech API: $0.00                                                                                                                                                                                              │
+│  • Cloud Storage: $0.00                                                                                                                                                                                                 │
+│  • Compute Engine: $230.60                                                                                                                                                                                              │
+│  • Gemini API: $3.67                                                                                                                                                                                                    │
+│  • Kubernetes Engine: $68.89                                                                                                                                                                                            │
+│  • Networking: $41.14                                                                                                                                                                                                   │
+│  • Secret Manager: $2.45                 
+
 ```
 
 ---
