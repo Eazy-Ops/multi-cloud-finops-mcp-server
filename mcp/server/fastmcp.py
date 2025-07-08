@@ -1,6 +1,4 @@
 import asyncio
-import os
-import sys
 from typing import TypedDict
 
 import nest_asyncio
@@ -12,6 +10,7 @@ from prompt_toolkit import prompt
 from prompt_toolkit.history import InMemoryHistory
 from rich.align import Align
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -31,11 +30,12 @@ from clouds.azure.tools import (analyze_azure_aks_clusters,
                                 analyze_azure_static_ips,
                                 analyze_azure_storage, get_azure_cost,
                                 run_azure_finops_audit)
-from clouds.gcp.tools import (analyze_gcp_disks, analyze_gcp_gke_clusters,
-                              analyze_gcp_snapshots, analyze_gcp_static_ips,
-                              analyze_gcp_storage, get_gcp_cost, get_gcp_logs,
-                              list_gcp_projects, list_gke_clusters,
-                              list_sql_instances, run_gcp_finops_audit)
+from clouds.gcp.tools import (analyze_gcp_bigquery, analyze_gcp_disks,
+                              analyze_gcp_gke_clusters, analyze_gcp_snapshots,
+                              analyze_gcp_static_ips, analyze_gcp_storage,
+                              get_gcp_cost, get_gcp_logs, list_gcp_projects,
+                              list_gke_clusters, list_sql_instances,
+                              run_gcp_finops_audit)
 from config import GOOGLE_API_KEY
 
 console = Console()
@@ -95,6 +95,7 @@ tools = [
     analyze_azure_snapshots,
     analyze_azure_static_ips,
     analyze_azure_aks_clusters,
+    analyze_gcp_bigquery,
 ]
 
 agent_prompt = ChatPromptTemplate.from_messages(
@@ -134,7 +135,6 @@ def extract_cloud_hint(user_input: str) -> str:
     return ""
 
 
-from rich.markdown import Markdown
 
 
 def render_pretty_output(content: str):
@@ -212,13 +212,18 @@ def run():
     for example in examples:
         table.add_row(Text.from_markup(example))
 
-    console.print(Panel(Align.left(table), title="[bold magenta]Example Prompts[/bold magenta]", border_style="magenta"))
+    console.print(
+        Panel(
+            Align.left(table),
+            title="[bold magenta]Example Prompts[/bold magenta]",
+            border_style="magenta",
+        )
+    )
 
     while True:
         try:
             user_input = prompt(
-                "Ask me your Multi-Cloud FinOps question (or 'exit'): ",
-                history=history
+                "Ask me your Multi-Cloud FinOps question (or 'exit'): ", history=history
             )
             if user_input.strip().lower() in ["exit", "quit"]:
                 break
@@ -231,7 +236,6 @@ def run():
                     border_style="red",
                 )
             )
-
 
 
 if __name__ == "__main__":

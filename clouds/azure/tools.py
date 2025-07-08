@@ -1,5 +1,4 @@
 import logging
-import traceback
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -840,7 +839,9 @@ def analyze_azure_snapshots(
                     )
 
             except Exception as snapshot_e:
-                ogger.warning("Could not analyze snapshot %s: %s", snapshot.name, snapshot_e)
+                logger.warning(
+                    "Could not analyze snapshot %s: %s", snapshot.name, snapshot_e
+                )
                 continue
 
         return recommendations
@@ -938,12 +939,17 @@ def analyze_azure_static_ips(
                             )
 
                     except Exception as ip_e:
-                        logger.warning("Could not analyze public IP %s: %s", public_ip.name, ip_e)
+                        logger.warning(
+                            "Could not analyze public IP %s: %s", public_ip.name, ip_e
+                        )
                         continue
 
             except Exception as rg_network_e:
-                logger.warning("Could not analyze network resources in resource group %s: %s", resource_group,
-                               rg_network_e)
+                logger.warning(
+                    "Could not analyze network resources in resource group %s: %s",
+                    resource_group,
+                    rg_network_e,
+                )
                 continue
 
         return recommendations
@@ -1146,8 +1152,11 @@ def analyze_azure_aks_clusters(
                                                 }
                                             )
                                 except Exception as metric_e:
-                                    logger.warning("Could not get metrics for agent pool %s: %s", agent_pool.name,
-                                                   metric_e)
+                                    logger.warning(
+                                        "Could not get metrics for agent pool %s: %s",
+                                        agent_pool.name,
+                                        metric_e,
+                                    )
 
                             # Check if Spot instances are not enabled
                             if not agent_pool.spot_max_price:
@@ -1168,7 +1177,11 @@ def analyze_azure_aks_clusters(
                                 )
 
                         except Exception as agent_pool_e:
-                            logger.warning("Could not analyze agent pool %s: %s", agent_pool.name, agent_pool_e)
+                            logger.warning(
+                                "Could not analyze agent pool %s: %s",
+                                agent_pool.name,
+                                agent_pool_e,
+                            )
                             continue
 
                 # Check IAM roles for excessive permissions
@@ -1205,11 +1218,14 @@ def analyze_azure_aks_clusters(
                                 }
                             )
                 except Exception as iam_e:
-                    logger.warning("Could not analyze IAM for cluster %s: %s", cluster.name, iam_e)
-
+                    logger.warning(
+                        "Could not analyze IAM for cluster %s: %s", cluster.name, iam_e
+                    )
 
             except Exception as cluster_e:
-                logger.warning("Could not analyze cluster %s: %s", cluster.name, cluster_e)
+                logger.warning(
+                    "Could not analyze cluster %s: %s", cluster.name, cluster_e
+                )
                 continue
 
         return recommendations
