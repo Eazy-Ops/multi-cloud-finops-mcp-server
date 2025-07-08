@@ -20,7 +20,7 @@ from clouds.aws.tools import (analyze_aws_disks, analyze_aws_eks_clusters,
                               analyze_aws_static_ips,
                               analyze_cloudwatch_logs_cost,
                               analyze_ec2_rightsizing, analyze_rds_instances,
-                              analyze_s3_optimization)
+                              analyze_s3_optimization, analyze_lambda_optimization)
 from clouds.aws.tools import get_cost as get_aws_cost
 from clouds.aws.tools import list_aws_profiles
 from clouds.aws.tools import run_finops_audit as run_aws_finops_audit
@@ -96,6 +96,7 @@ tools = [
     analyze_azure_static_ips,
     analyze_azure_aks_clusters,
     analyze_gcp_bigquery,
+    analyze_lambda_optimization
 ]
 
 agent_prompt = ChatPromptTemplate.from_messages(
