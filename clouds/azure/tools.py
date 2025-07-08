@@ -1232,3 +1232,158 @@ def analyze_azure_aks_clusters(
 
     except Exception as e:
         return {"error": str(e), "recommendations": {}}
+
+
+@tool
+def analyze_azure_sql_databases(
+    subscription_id: str, service_principal_credentials: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Analyze Azure SQL Databases for cost optimization opportunities.
+    Identifies:
+    - Idle databases (no connections or low DTU usage)
+    - Oversized databases (high max size, low usage)
+    - Long backup retention
+
+    Args:
+        subscription_id: Azure subscription ID
+        service_principal_credentials: Optional. Dictionary containing service principal credentials.
+
+    Returns:
+        Dictionary containing SQL database optimization recommendations with resource details
+    """
+    from datetime import datetime, timedelta
+
+    from azure.mgmt.monitor import MonitorManagementClient
+    from azure.mgmt.sql import SqlManagementClient
+
+    def extract_resource_group_from_id(resource_id: str) -> str:
+        parts = resource_id.split("/")
+        try:
+            rg_index = parts.index("resourceGroups")
+            return parts[rg_index + 1]
+        except (ValueError, IndexError):
+            return None
+
+    try:
+        credentials = get_azure_credentials(service_principal_credentials)
+        sql_client = SqlManagementClient(credentials, subscription_id)
+        monitor_client = MonitorManagementClient(credentials, subscription_id)
+
+        recommendations = {
+            "idle_databases": [],
+            "oversized_databases": [],
+            "long_backup_retention": [],
+            "available_databases": [],
+        }
+
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(days=30)
+
+        for server in sql_client.servers.list():
+            resource_group = extract_resource_group_from_id(server.id)
+            for db in sql_client.databases.list_by_server(resource_group, server.name):
+                if db.name.lower() == "master":
+                    continue
+                db_details = {
+                    "server_name": server.name,
+                    "database_name": db.name,
+                    "location": db.location,
+                    "edition": getattr(db, "edition", "Unknown"),
+                    "max_size_bytes": db.max_size_bytes,
+                    "status": db.status,
+                    "creation_date": (
+                        db.creation_date.isoformat() if db.creation_date else None
+                    ),
+                    "current_service_objective": getattr(
+                        db, "current_service_objective_name", None
+                    ),
+                    "requested_service_objective": getattr(
+                        db, "requested_service_objective_name", None
+                    ),
+                    "tags": db.tags,
+                }
+                recommendations["available_databases"].append(db_details)
+
+                # Check for idle databases (low DTU usage)
+                try:
+                    metrics = monitor_client.metrics.list(
+                        resource_uri=db.id,
+                        timespan=f"{start_time.isoformat()}/{end_time.isoformat()}",
+                        interval="P1D",
+                        metricnames="cpu_percent",
+                        aggregation="Average",
+                    )
+                    if (
+                        metrics.value
+                        and metrics.value[0].timeseries
+                        and metrics.value[0].timeseries[0].data
+                    ):
+                        avg_cpu = sum(
+                            dp.average
+                            for dp in metrics.value[0].timeseries[0].data
+                            if dp.average is not None
+                        ) / len(metrics.value[0].timeseries[0].data)
+                        if avg_cpu < 5:
+                            recommendations["idle_databases"].append(
+                                {
+                                    "resource_details": db_details,
+                                    "recommendation": {
+                                        "action": "Review or delete idle database",
+                                        "reason": f"Average CPU usage is {avg_cpu:.2f}% in last 30 days",
+                                        "suggestions": [
+                                            "Delete if no longer needed",
+                                            "Scale down to lower tier",
+                                            "Pause if using serverless tier",
+                                        ],
+                                    },
+                                }
+                            )
+                except Exception as metric_e:
+                    logger.warning(
+                        f"Could not get DTU metrics for database {db.name}: {metric_e}"
+                    )
+
+                # Check for oversized databases (large max size, low usage)
+                if (
+                    db.max_size_bytes and db.max_size_bytes > 100 * 1024 * 1024 * 1024
+                ):  # >100GB
+                    recommendations["oversized_databases"].append(
+                        {
+                            "resource_details": db_details,
+                            "recommendation": {
+                                "action": "Reduce max size or archive data",
+                                "reason": f"Database max size is {db.max_size_bytes / (1024**3):.2f} GB",
+                                "suggestions": [
+                                    "Reduce max size if possible",
+                                    "Archive old data to cheaper storage",
+                                    "Review data retention policies",
+                                ],
+                            },
+                        }
+                    )
+
+                # Check for long backup retention
+                if (
+                    hasattr(db, "backup_retention_days")
+                    and db.backup_retention_days
+                    and db.backup_retention_days > 14
+                ):
+                    recommendations["long_backup_retention"].append(
+                        {
+                            "resource_details": db_details,
+                            "recommendation": {
+                                "action": "Reduce backup retention period",
+                                "reason": f"Backup retention is {db.backup_retention_days} days",
+                                "suggestions": [
+                                    "Reduce retention to 7-14 days if possible",
+                                    "Export backups to cheaper storage",
+                                ],
+                            },
+                        }
+                    )
+
+        return recommendations
+
+    except Exception as e:
+        return {"error": str(e), "recommendations": {}}

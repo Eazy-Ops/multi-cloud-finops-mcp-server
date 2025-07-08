@@ -1569,8 +1569,8 @@ def analyze_lambda_optimization(
     Returns:
         Dictionary containing Lambda optimization recommendations with resource details
     """
-    import boto3
     from datetime import datetime, timedelta
+
 
     session, _, _ = get_boto3_session(profile_name)
     ec2 = session.client("ec2")
@@ -1578,7 +1578,9 @@ def analyze_lambda_optimization(
 
     # If regions are not provided, retrieve all regions
     if not regions:
-        regions = [r["RegionName"] for r in ec2.describe_regions(AllRegions=False)["Regions"]]
+        regions = [
+            r["RegionName"] for r in ec2.describe_regions(AllRegions=False)["Regions"]
+        ]
 
     recommendations = {
         "unused_functions": [],
@@ -1624,33 +1626,41 @@ def analyze_lambda_optimization(
                         Period=86400 * 7,  # Weekly
                         Statistics=["Sum"],
                     )
-                    total_invocations = sum(point["Sum"] for point in invocations["Datapoints"]) if invocations["Datapoints"] else 0
+                    total_invocations = (
+                        sum(point["Sum"] for point in invocations["Datapoints"])
+                        if invocations["Datapoints"]
+                        else 0
+                    )
                     if total_invocations == 0:
-                        recommendations["unused_functions"].append({
-                            "resource_details": function_details,
-                            "recommendation": {
-                                "action": "Delete or review unused Lambda function",
-                                "reason": "No invocations in last 90 days",
-                                "suggestions": [
-                                    "Delete if no longer needed",
-                                    "Review triggers and event sources",
-                                ],
-                            },
-                        })
+                        recommendations["unused_functions"].append(
+                            {
+                                "resource_details": function_details,
+                                "recommendation": {
+                                    "action": "Delete or review unused Lambda function",
+                                    "reason": "No invocations in last 90 days",
+                                    "suggestions": [
+                                        "Delete if no longer needed",
+                                        "Review triggers and event sources",
+                                    ],
+                                },
+                            }
+                        )
 
                     # Check for high memory allocation (> 1024 MB)
                     if memory_size > 1024:
-                        recommendations["high_memory_functions"].append({
-                            "resource_details": function_details,
-                            "recommendation": {
-                                "action": "Reduce memory allocation if possible",
-                                "reason": f"Function allocated {memory_size} MB",
-                                "suggestions": [
-                                    "Profile function to determine optimal memory",
-                                    "Reduce memory for cost savings if performance allows",
-                                ],
-                            },
-                        })
+                        recommendations["high_memory_functions"].append(
+                            {
+                                "resource_details": function_details,
+                                "recommendation": {
+                                    "action": "Reduce memory allocation if possible",
+                                    "reason": f"Function allocated {memory_size} MB",
+                                    "suggestions": [
+                                        "Profile function to determine optimal memory",
+                                        "Reduce memory for cost savings if performance allows",
+                                    ],
+                                },
+                            }
+                        )
 
                     # Check for long average duration (> 3 seconds)
                     durations = cloudwatch.get_metric_statistics(
@@ -1663,24 +1673,30 @@ def analyze_lambda_optimization(
                         Statistics=["Average"],
                     )
                     avg_duration = (
-                        sum(point["Average"] for point in durations["Datapoints"]) / len(durations["Datapoints"])
-                        if durations["Datapoints"] else 0
+                        sum(point["Average"] for point in durations["Datapoints"])
+                        / len(durations["Datapoints"])
+                        if durations["Datapoints"]
+                        else 0
                     )
                     if avg_duration > 3000:  # milliseconds
-                        recommendations["long_duration_functions"].append({
-                            "resource_details": function_details,
-                            "recommendation": {
-                                "action": "Optimize function code or increase memory",
-                                "reason": f"Average duration is {avg_duration:.2f} ms",
-                                "suggestions": [
-                                    "Profile and optimize function code",
-                                    "Increase memory if function is CPU-bound",
-                                    "Review dependencies and cold start impact",
-                                ],
-                            },
-                        })
+                        recommendations["long_duration_functions"].append(
+                            {
+                                "resource_details": function_details,
+                                "recommendation": {
+                                    "action": "Optimize function code or increase memory",
+                                    "reason": f"Average duration is {avg_duration:.2f} ms",
+                                    "suggestions": [
+                                        "Profile and optimize function code",
+                                        "Increase memory if function is CPU-bound",
+                                        "Review dependencies and cold start impact",
+                                    ],
+                                },
+                            }
+                        )
         except Exception as e:
-            logger.warning(f"Warning: Could not analyze Lambda functions in region {region}: {e}")
+            logger.warning(
+                f"Warning: Could not analyze Lambda functions in region {region}: {e}"
+            )
             continue
 
     return recommendations

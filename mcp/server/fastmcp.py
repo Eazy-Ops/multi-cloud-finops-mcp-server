@@ -19,14 +19,16 @@ from clouds.aws.tools import (analyze_aws_disks, analyze_aws_eks_clusters,
                               analyze_aws_network, analyze_aws_snapshots,
                               analyze_aws_static_ips,
                               analyze_cloudwatch_logs_cost,
-                              analyze_ec2_rightsizing, analyze_rds_instances,
-                              analyze_s3_optimization, analyze_lambda_optimization)
+                              analyze_ec2_rightsizing,
+                              analyze_lambda_optimization,
+                              analyze_rds_instances, analyze_s3_optimization)
 from clouds.aws.tools import get_cost as get_aws_cost
 from clouds.aws.tools import list_aws_profiles
 from clouds.aws.tools import run_finops_audit as run_aws_finops_audit
 from clouds.azure.tools import (analyze_azure_aks_clusters,
                                 analyze_azure_disks, analyze_azure_instances,
                                 analyze_azure_network, analyze_azure_snapshots,
+                                analyze_azure_sql_databases,
                                 analyze_azure_static_ips,
                                 analyze_azure_storage, get_azure_cost,
                                 run_azure_finops_audit)
@@ -96,7 +98,8 @@ tools = [
     analyze_azure_static_ips,
     analyze_azure_aks_clusters,
     analyze_gcp_bigquery,
-    analyze_lambda_optimization
+    analyze_lambda_optimization,
+    analyze_azure_sql_databases,
 ]
 
 agent_prompt = ChatPromptTemplate.from_messages(
@@ -134,8 +137,6 @@ def extract_cloud_hint(user_input: str) -> str:
     elif "azure" in user_input or "subscription" in user_input:
         return "azure"
     return ""
-
-
 
 
 def render_pretty_output(content: str):
