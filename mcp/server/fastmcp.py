@@ -25,6 +25,7 @@ from clouds.aws.tools import (analyze_aws_disks, analyze_aws_eks_clusters,
 from clouds.aws.tools import get_cost as get_aws_cost
 from clouds.aws.tools import list_aws_profiles
 from clouds.aws.tools import run_finops_audit as run_aws_finops_audit
+from clouds.aws.tools import save_report, save_report_csv
 from clouds.azure.tools import (analyze_azure_aks_clusters,
                                 analyze_azure_disks, analyze_azure_instances,
                                 analyze_azure_network, analyze_azure_snapshots,
@@ -100,6 +101,8 @@ tools = [
     analyze_gcp_bigquery,
     analyze_lambda_optimization,
     analyze_azure_sql_databases,
+    save_report,
+    save_report_csv,
 ]
 
 agent_prompt = ChatPromptTemplate.from_messages(
@@ -110,6 +113,8 @@ agent_prompt = ChatPromptTemplate.from_messages(
             "- Get cost breakdowns for AWS, GCP, Azure\n"
             "- Run FinOps audits for cost-saving insights\n"
             "- List Projects, Profiles, Subscriptions for AWS, GCP, Azure\n"
+            "- Always regenerate report data in a clean, tabular format that is easily mappable to CSV or PDF.\n"
+            "- Always generate reports data in a tabular clear, professional format suitable for C-level executives\n"
             "Decide which cloud's tool to invoke based on user input.",
         ),
         MessagesPlaceholder(variable_name="messages"),

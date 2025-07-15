@@ -1571,7 +1571,6 @@ def analyze_lambda_optimization(
     """
     from datetime import datetime, timedelta
 
-
     session, _, _ = get_boto3_session(profile_name)
     ec2 = session.client("ec2")
     cloudwatch = session.client("cloudwatch")
@@ -1700,3 +1699,77 @@ def analyze_lambda_optimization(
             continue
 
     return recommendations
+
+
+@tool
+def save_report(
+    title: str, content: str, file_format: str = "txt", filename: str = None
+) -> dict:
+    """
+    Save a report (PDF, CSV, TXT, etc) to the reports directory.
+
+    Args:
+        title: Used to generate the filename if filename not provided
+        content: Full content as string (LLM-generated)
+        file_format: File type: 'txt', 'csv', or 'md'. Use 'pdf' only with pre-rendered plain text (no HTML)
+        filename: Optional full filename. If not given, it is auto-generated from title and file_format
+
+    Returns:
+        dict: { success, filepath } or { error }
+    """
+    import os
+    import re
+    from datetime import datetime
+
+    try:
+        file_format = file_format.lower().strip(".")
+        if file_format not in ["txt", "csv", "md", "log", "json", "pdf"]:
+            return {
+                "success": False,
+                "error": f"Unsupported file format: {file_format}",
+            }
+        reports_dir = os.path.join(os.getcwd(), "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+        if not filename:
+            base = re.sub(r"\W+", "_", title.lower()).strip("_")
+            filename = (
+                f"{base}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file_format}"
+            )
+
+        filepath = os.path.join(reports_dir, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content.strip() + "\n")
+
+        return {"success": True, "filepath": filepath}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@tool
+def save_report_csv(title: str, csv_content: str, filename: str = None) -> dict:
+    """
+    Save LLM-generated CSV string content to a file.
+    Args:
+        title: Title of the report (used to generate filename if not provided)
+        csv_content: Full CSV string (with header and rows) from LLM
+        filename: Optional filename. If not provided, it will be generated.
+    Returns:
+        Dict with 'success' and 'filepath' or 'error'
+    """
+    import os
+    import re
+    from datetime import datetime
+
+    try:
+        reports_dir = os.path.join(os.getcwd(), "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+        if not filename:
+            base = re.sub(r"\W+", "_", title.lower()).strip("_")
+            filename = f"{base}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        filepath = os.path.join(reports_dir, filename)
+        with open(filepath, mode="w") as f:
+            f.write(csv_content.strip() + "\n")
+
+        return {"success": True, "filepath": filepath}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
