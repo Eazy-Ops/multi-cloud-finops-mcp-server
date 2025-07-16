@@ -28,6 +28,16 @@ class TestGCPTools(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("recommendations", result)
 
+    def test_analyze_gcp_bigquery_error_handling(self):
+        result = tools.analyze_gcp_bigquery.invoke(
+            {
+                "project_id": "bad-project",
+                "service_account_key_path": "/invalid/path.json",
+            }
+        )
+        self.assertIn("error", result)
+        self.assertIn("recommendations", result)
+
 
 if __name__ == "__main__":
     unittest.main()
